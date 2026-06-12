@@ -10,16 +10,15 @@ export type AuthState =
   | { status: "loading" }
   | { status: "signed-out" }
   | { status: "mfa-required"; challenge: MfaChallenge }
-  | { status: "mfa-setup"; secretCode: string; username?: string }
+  | { status: "mfa-setup"; secretCode: string; username: string | null }
   | { status: "signed-in"; user: AuthUser }
   | { status: "error"; message: string };
-
 export type MfaChallenge = "sms" | "totp";
 
 export type AuthUser = {
-  subject?: string;
-  email?: string;
-  username?: string;
+  subject: string | null;
+  email: string | null;
+  username: string | null;
 };
 
 export type AuthClient = {
@@ -33,9 +32,9 @@ export type AuthClient = {
   getAccessToken: (request?: AccessTokenRequest) => Promise<string | undefined>;
 };
 
-export type AccessTokenRequest = {
-  forceRefresh?: boolean;
-};
+export type AccessTokenRequest = Partial<{
+  forceRefresh: boolean;
+}>;
 
 type SessionLike = {
   getAccessToken: () => { getJwtToken: () => string };
@@ -55,16 +54,15 @@ type CognitoAdapter = {
 type SignInResult =
   | { status: "signed-in"; session: SessionLike }
   | { status: "mfa-required"; challenge: MfaChallenge }
-  | { status: "mfa-setup"; secretCode: string; username?: string };
+  | { status: "mfa-setup"; secretCode: string; username: string | null };
 
-export type CreateAuthClientOptions = {
-  adapter?: CognitoAdapter;
-  config?: typeof runtimeConfig;
-};
+export type CreateAuthClientOptions = Partial<{
+  adapter: CognitoAdapter;
+  config: typeof runtimeConfig;
+}>;
 
 class BrowserAuthClient implements AuthClient {
   private state: AuthState = { status: "loading" };
-  private session: SessionLike | null = null;
   private readonly listeners = new Set<(state: AuthState) => void>();
   private readonly adapter: CognitoAdapter;
 
@@ -88,10 +86,8 @@ class BrowserAuthClient implements AuthClient {
     this.setState({ status: "loading" });
     try {
       const session = await this.adapter.getSession();
-      this.session = session;
       this.setState(stateFromSession(session));
     } catch (error) {
-      this.session = null;
       this.setState({ status: "error", message: authErrorMessage(error) });
     }
     return this.state;
@@ -102,7 +98,6 @@ class BrowserAuthClient implements AuthClient {
       const result = await this.adapter.signIn(username, password);
       this.applySignInResult(result);
     } catch (error) {
-      this.session = null;
       this.setState({ status: "signed-out" });
       throw error;
     }
@@ -110,19 +105,16 @@ class BrowserAuthClient implements AuthClient {
 
   async confirmMfa(code: string) {
     const session = await this.adapter.confirmMfa(code);
-    this.session = session;
     this.setState(stateFromSession(session));
   }
 
   async verifyMfaSetup(code: string) {
     const session = await this.adapter.verifyMfaSetup(code);
-    this.session = session;
     this.setState(stateFromSession(session));
   }
 
   async logout() {
     this.adapter.signOut();
-    this.session = null;
     this.setState({ status: "signed-out" });
   }
 
@@ -135,14 +127,12 @@ class BrowserAuthClient implements AuthClient {
       const session = request.forceRefresh
         ? await this.adapter.refreshSession()
         : await this.adapter.getSession();
-      this.session = session;
       const state = stateFromSession(session);
       this.setState(state);
       return state.status === "signed-in"
         ? session?.getAccessToken().getJwtToken()
         : undefined;
     } catch {
-      this.session = null;
       this.setState({ status: "signed-out" });
       return undefined;
     }
@@ -155,21 +145,23 @@ class BrowserAuthClient implements AuthClient {
 
   private applySignInResult(result: SignInResult) {
     if (result.status === "signed-in") {
-      this.session = result.session;
       this.setState(stateFromSession(result.session));
       return;
     }
-    this.session = null;
     this.setState(result);
   }
 }
 
 export function createAuthClient(
-  options: CreateAuthClientOptions = {},
+  options?: CreateAuthClientOptions,
 ): AuthClient {
-  const cfg = options.config ?? runtimeConfig;
-  const adapter = options.adapter ?? createCognitoAdapter(cfg);
-  return new BrowserAuthClient(adapter);
+  if (options?.adapter) {
+    return new BrowserAuthClient(options.adapter);
+  }
+  if (options?.config) {
+    return new BrowserAuthClient(createCognitoAdapter(options.config));
+  }
+  return new BrowserAuthClient(createCognitoAdapter(runtimeConfig));
 }
 
 function createCognitoAdapter(cfg: typeof runtimeConfig): CognitoAdapter {
@@ -393,5 +385,5 @@ function requiredConfig(value: string, key: string) {
 }
 
 function stringClaim(value: unknown) {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }

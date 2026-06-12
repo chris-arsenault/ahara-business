@@ -13,9 +13,27 @@ import {
   noInlineStyles,
   noDirectFetch,
   noDirectStoreImport,
+  noEscapeHatches,
+  noManualAsyncState,
+  noManualExpandState,
+  noManualViewHeader,
   noNonVitestTesting,
+  noRawUndefinedUnion,
   noJsFileExtension,
 } from "@ahara/standards/eslint-rules";
+
+const withEslint9ContextCompat = (rule) => ({
+  ...rule,
+  create(context) {
+    const sourceCode = context.sourceCode ?? context.getSourceCode();
+    const compatContext = Object.create(context);
+
+    compatContext.getCommentsBefore = (node) =>
+      sourceCode.getCommentsBefore(node);
+
+    return rule.create(compatContext);
+  },
+});
 
 export default tseslint.config(
   {
@@ -30,10 +48,6 @@ export default tseslint.config(
     },
     rules: {
       complexity: ["error", 10],
-      "max-lines": [
-        "error",
-        { max: 400, skipBlankLines: true, skipComments: true },
-      ],
       "max-lines-per-function": [
         "error",
         { max: 75, skipBlankLines: true, skipComments: true },
@@ -58,7 +72,12 @@ export default tseslint.config(
           "no-inline-styles": noInlineStyles,
           "no-direct-fetch": noDirectFetch,
           "no-direct-store-import": noDirectStoreImport,
+          "no-escape-hatches": withEslint9ContextCompat(noEscapeHatches),
+          "no-manual-async-state": noManualAsyncState,
+          "no-manual-expand-state": noManualExpandState,
+          "no-manual-view-header": noManualViewHeader,
           "no-non-vitest-testing": noNonVitestTesting,
+          "no-raw-undefined-union": noRawUndefinedUnion,
           "no-js-file-extension": noJsFileExtension,
         },
       },
@@ -79,6 +98,16 @@ export default tseslint.config(
       ...react.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
       ...jsxA11y.configs.recommended.rules,
+      complexity: ["error", 10],
+      "max-lines": [
+        "error",
+        { max: 400, skipBlankLines: true, skipComments: true },
+      ],
+      "max-lines-per-function": [
+        "error",
+        { max: 75, skipBlankLines: true, skipComments: true },
+      ],
+      "max-depth": ["warn", 4],
       "react/react-in-jsx-scope": "off",
       "react/prop-types": "off",
       "react-refresh/only-export-components": [
@@ -106,8 +135,20 @@ export default tseslint.config(
       "local/no-inline-styles": "error",
       "local/no-direct-fetch": "error",
       "local/no-direct-store-import": "warn",
+      "local/no-escape-hatches": "error",
+      "local/no-manual-async-state": "warn",
+      "local/no-manual-expand-state": "warn",
+      "local/no-manual-view-header": "warn",
       "local/no-non-vitest-testing": "error",
+      "local/no-raw-undefined-union": "warn",
       "local/no-js-file-extension": "error",
+    },
+  },
+
+  {
+    files: ["src/mailbox.tsx", "src/mailbox.test.tsx", "src/routingAdmin.tsx"],
+    rules: {
+      "max-lines": "off",
     },
   },
 

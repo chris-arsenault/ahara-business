@@ -1,37 +1,22 @@
 /* eslint-disable complexity, max-lines-per-function, react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
 import { Plus, Power, PowerOff, ShieldCheck, Trash2 } from "lucide-react";
-import type { ApiClient } from "./api";
-import type { DomainConfig, ForwardingRule, RoutingPolicy } from "./types";
+import type {
+  DomainConfig,
+  DraftForwarding,
+  RoutingAdminApi,
+  RoutingState,
+  UpdateDomainRequest,
+} from "./routingAdminTypes";
 
-export type RoutingAdminApi = Pick<
-  ApiClient,
-  | "listDomains"
-  | "updateDomain"
-  | "addAddress"
-  | "deactivateAddress"
-  | "listForwardingRules"
-  | "upsertForwardingRule"
-  | "deactivateForwardingRule"
->;
-
-type RoutingState =
-  | { status: "loading" }
-  | {
-      status: "ready";
-      domains: DomainConfig[];
-      forwardingRules: ForwardingRule[];
-    }
-  | { status: "error"; message: string };
+export type { RoutingAdminApi } from "./routingAdminTypes";
 
 export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
   const [state, setState] = useState<RoutingState>({ status: "loading" });
   const [draftLocalParts, setDraftLocalParts] = useState<
     Record<string, string>
   >({});
-  const [draftForwarding, setDraftForwarding] = useState<
-    Record<string, { local_part: string; target_address: string }>
-  >({});
+  const [draftForwarding, setDraftForwarding] = useState<DraftForwarding>({});
   const [actionError, setActionError] = useState<string>();
 
   async function loadDomains() {
@@ -120,7 +105,8 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
                 value={domain.routing_policy}
                 onChange={(event) =>
                   void updateDomain(domain.domain_name, {
-                    routing_policy: event.currentTarget.value as RoutingPolicy,
+                    routing_policy: event.currentTarget
+                      .value as UpdateDomainRequest["routing_policy"],
                   })
                 }
               >
@@ -282,7 +268,7 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
 
   async function updateDomain(
     domainName: string,
-    request: { routing_policy?: RoutingPolicy; active?: boolean },
+    request: UpdateDomainRequest,
   ) {
     setActionError(undefined);
     try {

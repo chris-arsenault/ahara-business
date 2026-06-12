@@ -179,6 +179,25 @@ mod tests {
         AppConfig::from_lookup(|name| env.get(name).cloned())
     }
 
+    fn assert_database_config(config: &AppConfig) {
+        assert_eq!(config.database.host, "db.internal");
+        assert_eq!(config.database.port, 6543);
+        assert_eq!(config.database.name, "ahara_business");
+    }
+
+    fn assert_mail_config(config: &AppConfig) {
+        assert_eq!(config.mail.domain, "ahara.io");
+        assert_eq!(config.mail.raw_mail_bucket, "ahara-business-raw-mail-123");
+        assert_eq!(config.mail.raw_mail_prefix, "raw/");
+        assert_eq!(config.feedback.bounce_topic_arn, "arn:aws:sns:::bounces");
+    }
+
+    fn assert_platform_config(config: &AppConfig) {
+        assert_eq!(config.api.api_base_url, "https://api.example.test");
+        assert_eq!(config.cognito.user_pool_id, "us-east-1_pool");
+        assert_eq!(config.cognito.client_id, "client-123");
+    }
+
     #[test]
     fn config_loads_required_runtime_values() {
         let mut env = base_env();
@@ -186,16 +205,9 @@ mod tests {
 
         let config = load(&env).unwrap();
 
-        assert_eq!(config.database.host, "db.internal");
-        assert_eq!(config.database.port, 6543);
-        assert_eq!(config.database.name, "ahara_business");
-        assert_eq!(config.mail.domain, "ahara.io");
-        assert_eq!(config.mail.raw_mail_bucket, "ahara-business-raw-mail-123");
-        assert_eq!(config.mail.raw_mail_prefix, "raw/");
-        assert_eq!(config.feedback.bounce_topic_arn, "arn:aws:sns:::bounces");
-        assert_eq!(config.api.api_base_url, "https://api.example.test");
-        assert_eq!(config.cognito.user_pool_id, "us-east-1_pool");
-        assert_eq!(config.cognito.client_id, "client-123");
+        assert_database_config(&config);
+        assert_mail_config(&config);
+        assert_platform_config(&config);
     }
 
     #[test]

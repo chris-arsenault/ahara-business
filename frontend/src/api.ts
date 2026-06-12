@@ -18,9 +18,9 @@ import type {
   UpsertForwardingRuleRequest,
 } from "./types";
 
-export type AccessTokenRequest = {
-  forceRefresh?: boolean;
-};
+export type AccessTokenRequest = Partial<{
+  forceRefresh: boolean;
+}>;
 
 type FetchLike = (
   input: RequestInfo | URL,
@@ -28,12 +28,28 @@ type FetchLike = (
 ) => Promise<Response>;
 
 export type ApiClientOptions = {
-  baseUrl?: string;
   getAccessToken: (
     request?: AccessTokenRequest,
   ) => Promise<string | undefined> | string | undefined;
-  fetchImpl?: FetchLike;
-};
+} & Partial<{
+  baseUrl: string;
+  fetchImpl: FetchLike;
+}>;
+
+type MailboxListQuery = Partial<{
+  limit: number;
+  unread_only: boolean;
+}>;
+
+type ApiRequestOptions = Partial<{
+  method: string;
+  body: unknown;
+}>;
+
+type ApiErrorPayload = Partial<{
+  code: string;
+  message: string;
+}>;
 
 export class ApiClientError extends Error {
   readonly status: number;
@@ -58,7 +74,7 @@ export class ApiClient {
     this.fetchImpl = options.fetchImpl ?? defaultFetch;
   }
 
-  fetchMailboxMessages(query: { limit?: number; unread_only?: boolean } = {}) {
+  fetchMailboxMessages(query: MailboxListQuery = {}) {
     const params = new URLSearchParams();
     if (query.limit !== undefined) {
       params.set("limit", String(query.limit));
@@ -209,7 +225,7 @@ export class ApiClient {
 
   private async request<T>(
     path: string,
-    options: { method?: string; body?: unknown } = {},
+    options: ApiRequestOptions = {},
   ): Promise<T> {
     const token = await this.options.getAccessToken();
     if (!token) {
@@ -241,10 +257,7 @@ export class ApiClient {
   }
 }
 
-function requestParts(
-  token: string,
-  options: { method?: string; body?: unknown },
-) {
+function requestParts(token: string, options: ApiRequestOptions) {
   const headers = new Headers({
     authorization: `Bearer ${token}`,
   });
@@ -266,9 +279,9 @@ export function createApiClient(options: ApiClientOptions) {
 }
 
 async function apiError(response: Response) {
-  let payload: { code?: string; message?: string } = {};
+  let payload: ApiErrorPayload = {};
   try {
-    payload = (await response.json()) as { code?: string; message?: string };
+    payload = (await response.json()) as ApiErrorPayload;
   } catch {
     payload = {};
   }

@@ -1,9 +1,9 @@
-/* eslint-disable max-lines, max-lines-per-function */
+/* eslint-disable max-lines-per-function */
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MailboxList, MailboxView } from "./mailbox";
+import { MailboxList, MailboxView, type MailboxApi } from "./mailbox";
 import type {
   MailboxMessageDetail,
   MailboxMessageSummary,
@@ -113,9 +113,17 @@ const sentMessageDetail: OutboundMessageDetail = {
 
 afterEach(() => cleanup());
 
+function renderMailboxList(messages: MailboxMessageSummary[]) {
+  return render(<MailboxList messages={messages} />);
+}
+
+function renderMailboxView(apiClient: MailboxApi) {
+  return render(<MailboxView apiClient={apiClient} />);
+}
+
 describe("MailboxList", () => {
   it("renders mailbox rows with unread state and auth verdict", () => {
-    render(<MailboxList messages={[unreadMessage]} />);
+    renderMailboxList([unreadMessage]);
 
     expect(screen.getAllByText("sender@example.test").length).toBeGreaterThan(
       0,
@@ -129,7 +137,7 @@ describe("MailboxList", () => {
   });
 
   it("renders an empty accepted-mailbox state", () => {
-    render(<MailboxList messages={[]} />);
+    renderMailboxList([]);
 
     expect(screen.getByText("No accepted messages")).toBeInTheDocument();
   });
@@ -137,45 +145,33 @@ describe("MailboxList", () => {
 
 describe("MailboxView", () => {
   it("loads mailbox messages from the API", async () => {
-    render(
-      <MailboxView
-        apiClient={{ fetchMailboxMessages: async () => [unreadMessage] }}
-      />,
-    );
+    renderMailboxView({ fetchMailboxMessages: async () => [unreadMessage] });
 
     expect(await screen.findByText("Invoice")).toBeInTheDocument();
   });
 
   it("renders API load errors", async () => {
-    render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => {
-            throw new Error("load failed");
-          },
-        }}
-      />,
-    );
+    renderMailboxView({
+      fetchMailboxMessages: async () => {
+        throw new Error("load failed");
+      },
+    });
 
     expect(await screen.findByRole("alert")).toHaveTextContent("load failed");
   });
 
   it("renders thread detail as inert plaintext with auth and attachment metadata", async () => {
     const user = userEvent.setup();
-    const { container } = render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => [unreadMessage],
-          fetchThreadDetail: async () => ({
-            thread_id: "thread-1",
-            normalized_subject: "invoice",
-            message_count: 1,
-            last_activity_at: "2026-01-01 00:00:00+00",
-            messages: [messageDetail],
-          }),
-        }}
-      />,
-    );
+    const { container } = renderMailboxView({
+      fetchMailboxMessages: async () => [unreadMessage],
+      fetchThreadDetail: async () => ({
+        thread_id: "thread-1",
+        normalized_subject: "invoice",
+        message_count: 1,
+        last_activity_at: "2026-01-01 00:00:00+00",
+        messages: [messageDetail],
+      }),
+    });
 
     await user.click(
       await screen.findByRole("button", { name: /sender@example.test/i }),
@@ -203,17 +199,13 @@ describe("MailboxView", () => {
   it("marks messages read from the list", async () => {
     const user = userEvent.setup();
     let requested: { messageId: string; isRead: boolean } | undefined;
-    render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => [unreadMessage],
-          updateMessageState: async (messageId, isRead) => {
-            requested = { messageId, isRead };
-            return { ...unreadMessage, is_read: isRead };
-          },
-        }}
-      />,
-    );
+    renderMailboxView({
+      fetchMailboxMessages: async () => [unreadMessage],
+      updateMessageState: async (messageId, isRead) => {
+        requested = { messageId, isRead };
+        return { ...unreadMessage, is_read: isRead };
+      },
+    });
 
     await user.click(await screen.findByLabelText("Mark read"));
 
@@ -223,17 +215,13 @@ describe("MailboxView", () => {
 
   it("marks messages unread from the list", async () => {
     const user = userEvent.setup();
-    render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => [readMessage],
-          updateMessageState: async (_messageId, isRead) => ({
-            ...readMessage,
-            is_read: isRead,
-          }),
-        }}
-      />,
-    );
+    renderMailboxView({
+      fetchMailboxMessages: async () => [readMessage],
+      updateMessageState: async (_messageId, isRead) => ({
+        ...readMessage,
+        is_read: isRead,
+      }),
+    });
 
     await user.click(await screen.findByLabelText("Mark unread"));
 
@@ -243,33 +231,29 @@ describe("MailboxView", () => {
   it("links and unlinks contacts through explicit selection", async () => {
     const user = userEvent.setup();
     const contactCalls: Array<string | null> = [];
-    render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => [unreadMessage],
-          fetchThreadDetail: async () => ({
-            thread_id: "thread-1",
-            normalized_subject: "invoice",
-            message_count: 1,
-            last_activity_at: "2026-01-01 00:00:00+00",
-            messages: [messageDetail],
-          }),
-          listContacts: async () => [
-            {
-              id: "contact-1",
-              display_name: "Chris",
-              primary_address: "chris@example.test",
-              primary_address_normalized: "chris@example.test",
-              notes: "",
-            },
-          ],
-          linkMessageContact: async (_messageId, contactId) => {
-            contactCalls.push(contactId);
-            return { ...unreadMessage, contact_id: contactId };
-          },
-        }}
-      />,
-    );
+    renderMailboxView({
+      fetchMailboxMessages: async () => [unreadMessage],
+      fetchThreadDetail: async () => ({
+        thread_id: "thread-1",
+        normalized_subject: "invoice",
+        message_count: 1,
+        last_activity_at: "2026-01-01 00:00:00+00",
+        messages: [messageDetail],
+      }),
+      listContacts: async () => [
+        {
+          id: "contact-1",
+          display_name: "Chris",
+          primary_address: "chris@example.test",
+          primary_address_normalized: "chris@example.test",
+          notes: "",
+        },
+      ],
+      linkMessageContact: async (_messageId, contactId) => {
+        contactCalls.push(contactId);
+        return { ...unreadMessage, contact_id: contactId };
+      },
+    });
 
     await user.click(
       await screen.findByRole("button", { name: /sender@example.test/i }),
@@ -283,16 +267,12 @@ describe("MailboxView", () => {
 
   it("shows API error state for failed message actions", async () => {
     const user = userEvent.setup();
-    render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => [unreadMessage],
-          updateMessageState: async () => {
-            throw new Error("update failed");
-          },
-        }}
-      />,
-    );
+    renderMailboxView({
+      fetchMailboxMessages: async () => [unreadMessage],
+      updateMessageState: async () => {
+        throw new Error("update failed");
+      },
+    });
 
     await user.click(await screen.findByLabelText("Mark read"));
 
@@ -309,23 +289,19 @@ describe("MailboxView", () => {
           body_text: string;
         }
       | undefined;
-    render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => [],
-          composeMessage: async (request) => {
-            composed = request;
-            return {
-              message_id: "outbound-1",
-              work_id: "work-1",
-              rfc_message_id: "<outbound-1@ahara.io>",
-              status: "queued",
-              recipients: [],
-            };
-          },
-        }}
-      />,
-    );
+    renderMailboxView({
+      fetchMailboxMessages: async () => [],
+      composeMessage: async (request) => {
+        composed = request;
+        return {
+          message_id: "outbound-1",
+          work_id: "work-1",
+          rfc_message_id: "<outbound-1@ahara.io>",
+          status: "queued",
+          recipients: [],
+        };
+      },
+    });
 
     await user.click(await screen.findByRole("button", { name: "Compose" }));
     await user.clear(screen.getByLabelText("From"));
@@ -349,18 +325,14 @@ describe("MailboxView", () => {
   it("shows sent mail and opens outbound message details", async () => {
     const user = userEvent.setup();
     let fetchedOutboundId = "";
-    render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => [],
-          listOutboundMessages: async () => [sentMessage],
-          fetchOutboundMessage: async (messageId) => {
-            fetchedOutboundId = messageId;
-            return sentMessageDetail;
-          },
-        }}
-      />,
-    );
+    renderMailboxView({
+      fetchMailboxMessages: async () => [],
+      listOutboundMessages: async () => [sentMessage],
+      fetchOutboundMessage: async (messageId) => {
+        fetchedOutboundId = messageId;
+        return sentMessageDetail;
+      },
+    });
 
     await user.click(await screen.findByRole("button", { name: "Sent" }));
     expect(await screen.findByText("Plain note")).toBeInTheDocument();
@@ -388,34 +360,30 @@ describe("MailboxView", () => {
           body_text: string;
         }
       | undefined;
-    render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => [unreadMessage],
-          fetchThreadDetail: async () => ({
-            thread_id: "thread-1",
-            normalized_subject: "invoice",
-            message_count: 1,
-            last_activity_at: "2026-01-01 00:00:00+00",
-            messages: [messageDetail],
-          }),
-          replyToMessage: async (messageId, request) => {
-            reply = {
-              messageId,
-              from_address: request.from_address,
-              body_text: request.body_text,
-            };
-            return {
-              message_id: "outbound-1",
-              work_id: "work-1",
-              rfc_message_id: "<outbound-1@ahara.io>",
-              status: "queued",
-              recipients: [],
-            };
-          },
-        }}
-      />,
-    );
+    renderMailboxView({
+      fetchMailboxMessages: async () => [unreadMessage],
+      fetchThreadDetail: async () => ({
+        thread_id: "thread-1",
+        normalized_subject: "invoice",
+        message_count: 1,
+        last_activity_at: "2026-01-01 00:00:00+00",
+        messages: [messageDetail],
+      }),
+      replyToMessage: async (messageId, request) => {
+        reply = {
+          messageId,
+          from_address: request.from_address,
+          body_text: request.body_text,
+        };
+        return {
+          message_id: "outbound-1",
+          work_id: "work-1",
+          rfc_message_id: "<outbound-1@ahara.io>",
+          status: "queued",
+          recipients: [],
+        };
+      },
+    });
 
     await user.click(
       await screen.findByRole("button", { name: /sender@example.test/i }),
@@ -434,33 +402,29 @@ describe("MailboxView", () => {
   it("does not auto-associate contacts from sender display names", async () => {
     const user = userEvent.setup();
     const contactCalls: Array<string | null> = [];
-    render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => [unreadMessage],
-          fetchThreadDetail: async () => ({
-            thread_id: "thread-1",
-            normalized_subject: "invoice",
-            message_count: 1,
-            last_activity_at: "2026-01-01 00:00:00+00",
-            messages: [messageDetail],
-          }),
-          listContacts: async () => [
-            {
-              id: "contact-1",
-              display_name: "Sender Display",
-              primary_address: "sender@example.test",
-              primary_address_normalized: "sender@example.test",
-              notes: "",
-            },
-          ],
-          linkMessageContact: async (_messageId, contactId) => {
-            contactCalls.push(contactId);
-            return { ...unreadMessage, contact_id: contactId };
-          },
-        }}
-      />,
-    );
+    renderMailboxView({
+      fetchMailboxMessages: async () => [unreadMessage],
+      fetchThreadDetail: async () => ({
+        thread_id: "thread-1",
+        normalized_subject: "invoice",
+        message_count: 1,
+        last_activity_at: "2026-01-01 00:00:00+00",
+        messages: [messageDetail],
+      }),
+      listContacts: async () => [
+        {
+          id: "contact-1",
+          display_name: "Sender Display",
+          primary_address: "sender@example.test",
+          primary_address_normalized: "sender@example.test",
+          notes: "",
+        },
+      ],
+      linkMessageContact: async (_messageId, contactId) => {
+        contactCalls.push(contactId);
+        return { ...unreadMessage, contact_id: contactId };
+      },
+    });
 
     await user.click(
       await screen.findByRole("button", { name: /sender@example.test/i }),
@@ -476,17 +440,13 @@ describe("MailboxView", () => {
   it("submits mailbox searches and renders accepted results", async () => {
     const user = userEvent.setup();
     let searched = "";
-    render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => [],
-          searchMessages: async (query) => {
-            searched = query;
-            return [unreadMessage];
-          },
-        }}
-      />,
-    );
+    renderMailboxView({
+      fetchMailboxMessages: async () => [],
+      searchMessages: async (query) => {
+        searched = query;
+        return [unreadMessage];
+      },
+    });
 
     await user.type(
       await screen.findByPlaceholderText("Search mailbox"),
@@ -500,14 +460,10 @@ describe("MailboxView", () => {
 
   it("renders empty search results", async () => {
     const user = userEvent.setup();
-    render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => [unreadMessage],
-          searchMessages: async () => [],
-        }}
-      />,
-    );
+    renderMailboxView({
+      fetchMailboxMessages: async () => [unreadMessage],
+      searchMessages: async () => [],
+    });
 
     await user.type(
       await screen.findByPlaceholderText("Search mailbox"),
@@ -520,16 +476,12 @@ describe("MailboxView", () => {
 
   it("shows search API errors", async () => {
     const user = userEvent.setup();
-    render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => [unreadMessage],
-          searchMessages: async () => {
-            throw new Error("search failed");
-          },
-        }}
-      />,
-    );
+    renderMailboxView({
+      fetchMailboxMessages: async () => [unreadMessage],
+      searchMessages: async () => {
+        throw new Error("search failed");
+      },
+    });
 
     await user.type(
       await screen.findByPlaceholderText("Search mailbox"),
@@ -543,20 +495,16 @@ describe("MailboxView", () => {
   it("keeps dangerous search result snippets inert", async () => {
     const user = userEvent.setup();
     const scriptLike = "java" + "script:alert(1)";
-    const { container } = render(
-      <MailboxView
-        apiClient={{
-          fetchMailboxMessages: async () => [],
-          searchMessages: async () => [
-            {
-              ...unreadMessage,
-              snippet: `${scriptLike} data:text/html,<script>alert(1)</script>`,
-              security_disposition: "accepted",
-            },
-          ],
-        }}
-      />,
-    );
+    const { container } = renderMailboxView({
+      fetchMailboxMessages: async () => [],
+      searchMessages: async () => [
+        {
+          ...unreadMessage,
+          snippet: `${scriptLike} data:text/html,<script>alert(1)</script>`,
+          security_disposition: "accepted",
+        },
+      ],
+    });
 
     await user.type(
       await screen.findByPlaceholderText("Search mailbox"),

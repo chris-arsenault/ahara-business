@@ -8,14 +8,18 @@ use crate::forwarding::{ForwardingPlanner, ForwardingPlannerMessage};
 use crate::inbound::limits::IngestLimits;
 use crate::inbound::mime::{InboundParseError, parse_raw_mime};
 use crate::inbound::repository::{
-    InboundRepository, PersistInboundMessageRequest, PersistRejectedInboundRequest, rejected_audit,
+    InboundRepository, PersistInboundMessageRequest, PersistRejectedInboundRequest,
+    RejectedAuditRequest, rejected_audit,
 };
 use crate::inbound::routing::{InboundRoutingLookup, RoutingDecision, resolve_inbound_route};
 use crate::inbound::security::classify_receipt_security;
 use crate::inbound::ses_event::{
     InboundReceipt, RawMailLocation, parse_ses_receipt_event_with_raw_mail_location,
 };
-use crate::inbound::types::{InboundMailbox, InboundSecurityRecord, ParsedInboundMessage};
+use crate::inbound::types::{
+    InboundAuthResults, InboundMailbox, InboundSecurityRecord, ParsedInboundMessage,
+    PersistedInboundMessage,
+};
 use crate::mail_security::{SecurityDisposition, SecurityReason};
 use crate::ports::RawMailStore;
 
@@ -82,73 +86,35 @@ impl InboundIngestService {
             .raw_mail_store
             .get_raw_mail_metadata(&receipt.raw_mail.key)
             .await?;
-        let raw_size_bytes = raw_size_to_i64(raw_metadata.size_bytes);
-        if raw_metadata.size_bytes > self.limits.max_raw_mail_object_bytes {
-            return self
-                .persist_rejected_raw_mail_control(
-                    receipt,
-                    security_decision.auth,
-                    security_decision.security,
-                    "limit_exceeded_raw_mail_object_bytes",
-                    raw_size_bytes,
-                    FloodControlRejection::Oversize,
-                )
-                .await;
-        }
-
-        let recent_raw_mail_bytes = self
-            .repository
-            .recent_raw_mail_bytes(self.limits.recent_raw_mail_window_seconds)
-            .await?;
-        if recent_raw_mail_bytes.saturating_add(raw_size_bytes)
-            > raw_size_to_i64(self.limits.max_recent_raw_mail_bytes)
+        if let Some(outcome) = self
+            .reject_raw_mail_control_if_needed(
+                &receipt,
+                &security_decision.auth,
+                &security_decision.security,
+                raw_metadata.size_bytes,
+            )
+            .await?
         {
-            return self
-                .persist_rejected_raw_mail_control(
-                    receipt,
-                    security_decision.auth,
-                    security_decision.security,
-                    "limit_exceeded_recent_raw_mail_bytes",
-                    raw_size_bytes,
-                    FloodControlRejection::HourlyBytes,
-                )
-                .await;
+            return Ok(outcome);
         }
 
-        let raw = match self
+        let raw = self
             .raw_mail_store
             .get_raw_mail(&receipt.raw_mail.key)
-            .await
-        {
-            Ok(raw) => raw,
-            Err(err) => {
-                return Err(err);
-            }
-        };
+            .await?;
 
         let parsed = match parse_raw_mime(&raw.bytes, self.limits) {
             Ok(parsed) => parsed,
             Err(error) => {
-                let reason = parse_rejection_reason(&error);
-                let persisted = self
-                    .repository
-                    .persist_rejected_inbound(PersistRejectedInboundRequest {
-                        auth: security_decision.auth,
-                        audit: rejected_audit(
-                            receipt.ses_message_id,
-                            Some(receipt.raw_mail.key),
-                            receipt.recipients,
-                            None,
-                            rejected_record(security_decision.security),
-                            reason,
-                            Some(raw.bytes.len() as i64),
-                        ),
-                    })
-                    .await?;
-                return Ok(IngestOutcome::Rejected {
-                    idempotent: persisted.idempotent,
-                    flood_control: None,
-                });
+                return self
+                    .persist_parse_rejection(
+                        receipt,
+                        security_decision.auth,
+                        security_decision.security,
+                        &error,
+                        raw.bytes.len(),
+                    )
+                    .await;
             }
         };
 
@@ -168,27 +134,15 @@ impl InboundIngestService {
         let routing = match route {
             RoutingDecision::Accepted(routing) => routing,
             RoutingDecision::Rejected(rejection) => {
-                let mut security = security_decision.security;
-                security.disposition = SecurityDisposition::Rejected;
-                let persisted = self
-                    .repository
-                    .persist_rejected_inbound(PersistRejectedInboundRequest {
-                        auth: security_decision.auth,
-                        audit: rejected_audit(
-                            receipt.ses_message_id,
-                            Some(receipt.raw_mail.key),
-                            receipt.recipients,
-                            Some(parsed.from),
-                            security,
-                            rejection.reason.as_db_reason(),
-                            Some(parsed.size_bytes),
-                        ),
-                    })
-                    .await?;
-                return Ok(IngestOutcome::Rejected {
-                    idempotent: persisted.idempotent,
-                    flood_control: None,
-                });
+                return self
+                    .persist_routing_rejection(
+                        receipt,
+                        parsed,
+                        security_decision.auth,
+                        security_decision.security,
+                        rejection.reason.as_db_reason(),
+                    )
+                    .await;
             }
         };
 
@@ -205,37 +159,145 @@ impl InboundIngestService {
                 routing,
             })
             .await?;
-        if disposition == SecurityDisposition::Accepted
-            && !persisted.idempotent
-            && let Some(planner) = &self.forwarding_planner
-        {
-            planner
-                .process_message(ForwardingPlannerMessage {
-                    message_id: persisted.id.to_string(),
-                    thread_id: None,
-                    rfc_message_id: parsed_for_forwarding.rfc_message_id,
-                    reference_ids: parsed_for_forwarding.reference_ids,
-                    from_address: parsed_for_forwarding.from.address,
-                    subject: parsed_for_forwarding.subject,
-                    body_text: parsed_for_forwarding.body_text,
-                    auth: auth_for_forwarding,
-                    security_disposition: disposition,
+        self.plan_forwarding(
+            &persisted,
+            parsed_for_forwarding,
+            auth_for_forwarding,
+            disposition,
+        )
+        .await?;
+
+        Ok(outcome_from_disposition(disposition, persisted.idempotent))
+    }
+
+    async fn reject_raw_mail_control_if_needed(
+        &self,
+        receipt: &InboundReceipt,
+        auth: &InboundAuthResults,
+        security: &InboundSecurityRecord,
+        raw_object_bytes: usize,
+    ) -> AppResult<Option<IngestOutcome>> {
+        let raw_size_bytes = raw_size_to_i64(raw_object_bytes);
+        if raw_object_bytes > self.limits.max_raw_mail_object_bytes {
+            return self
+                .persist_rejected_raw_mail_control(RawMailControlRejection {
+                    receipt: receipt.clone(),
+                    auth: auth.clone(),
+                    security: security.clone(),
+                    rejection_reason: "limit_exceeded_raw_mail_object_bytes",
+                    size_bytes: raw_size_bytes,
+                    flood_control: FloodControlRejection::Oversize,
                 })
-                .await?;
+                .await
+                .map(Some);
         }
 
-        Ok(match disposition {
-            SecurityDisposition::Accepted => IngestOutcome::Accepted {
-                idempotent: persisted.idempotent,
-            },
-            SecurityDisposition::Quarantined => IngestOutcome::Quarantined {
-                idempotent: persisted.idempotent,
-            },
-            SecurityDisposition::Rejected => IngestOutcome::Rejected {
-                idempotent: persisted.idempotent,
-                flood_control: None,
-            },
-        })
+        let recent_raw_mail_bytes = self
+            .repository
+            .recent_raw_mail_bytes(self.limits.recent_raw_mail_window_seconds)
+            .await?;
+        if recent_raw_mail_bytes.saturating_add(raw_size_bytes)
+            > raw_size_to_i64(self.limits.max_recent_raw_mail_bytes)
+        {
+            return self
+                .persist_rejected_raw_mail_control(RawMailControlRejection {
+                    receipt: receipt.clone(),
+                    auth: auth.clone(),
+                    security: security.clone(),
+                    rejection_reason: "limit_exceeded_recent_raw_mail_bytes",
+                    size_bytes: raw_size_bytes,
+                    flood_control: FloodControlRejection::HourlyBytes,
+                })
+                .await
+                .map(Some);
+        }
+
+        Ok(None)
+    }
+
+    async fn persist_parse_rejection(
+        &self,
+        receipt: InboundReceipt,
+        auth: InboundAuthResults,
+        security: InboundSecurityRecord,
+        error: &InboundParseError,
+        raw_size_bytes: usize,
+    ) -> AppResult<IngestOutcome> {
+        let persisted = self
+            .repository
+            .persist_rejected_inbound(PersistRejectedInboundRequest {
+                auth,
+                audit: rejected_audit(RejectedAuditRequest {
+                    ses_message_id: receipt.ses_message_id,
+                    s3_raw_key: Some(receipt.raw_mail.key),
+                    envelope_recipients: receipt.recipients,
+                    from: None,
+                    security: rejected_record(security),
+                    rejection_reason: parse_rejection_reason(error),
+                    size_bytes: Some(raw_size_to_i64(raw_size_bytes)),
+                }),
+            })
+            .await?;
+
+        Ok(rejected_outcome(persisted.idempotent, None))
+    }
+
+    async fn persist_routing_rejection(
+        &self,
+        receipt: InboundReceipt,
+        parsed: ParsedInboundMessage,
+        auth: InboundAuthResults,
+        security: InboundSecurityRecord,
+        rejection_reason: impl Into<String>,
+    ) -> AppResult<IngestOutcome> {
+        let persisted = self
+            .repository
+            .persist_rejected_inbound(PersistRejectedInboundRequest {
+                auth,
+                audit: rejected_audit(RejectedAuditRequest {
+                    ses_message_id: receipt.ses_message_id,
+                    s3_raw_key: Some(receipt.raw_mail.key),
+                    envelope_recipients: receipt.recipients,
+                    from: Some(parsed.from),
+                    security: rejected_record(security),
+                    rejection_reason: rejection_reason.into(),
+                    size_bytes: Some(parsed.size_bytes),
+                }),
+            })
+            .await?;
+
+        Ok(rejected_outcome(persisted.idempotent, None))
+    }
+
+    async fn plan_forwarding(
+        &self,
+        persisted: &PersistedInboundMessage,
+        parsed: ParsedInboundMessage,
+        auth: InboundAuthResults,
+        disposition: SecurityDisposition,
+    ) -> AppResult<()> {
+        if disposition != SecurityDisposition::Accepted || persisted.idempotent {
+            return Ok(());
+        }
+
+        let Some(planner) = &self.forwarding_planner else {
+            return Ok(());
+        };
+
+        planner
+            .process_message(ForwardingPlannerMessage {
+                message_id: persisted.id.to_string(),
+                thread_id: None,
+                rfc_message_id: parsed.rfc_message_id,
+                reference_ids: parsed.reference_ids,
+                from_address: parsed.from.address,
+                subject: parsed.subject,
+                body_text: parsed.body_text,
+                auth,
+                security_disposition: disposition,
+            })
+            .await
+            .map(|_| ())
     }
 
     async fn persist_rejected(
@@ -249,54 +311,51 @@ impl InboundIngestService {
             .repository
             .persist_rejected_inbound(PersistRejectedInboundRequest {
                 auth,
-                audit: rejected_audit(
-                    receipt.ses_message_id,
-                    Some(receipt.raw_mail.key),
-                    receipt.recipients,
-                    Some(parsed.from.clone()),
+                audit: rejected_audit(RejectedAuditRequest {
+                    ses_message_id: receipt.ses_message_id,
+                    s3_raw_key: Some(receipt.raw_mail.key),
+                    envelope_recipients: receipt.recipients,
+                    from: Some(parsed.from.clone()),
                     security,
-                    SecurityReason::VirusFailed.as_db_value(),
-                    Some(parsed.size_bytes),
-                ),
+                    rejection_reason: SecurityReason::VirusFailed.as_db_value().to_string(),
+                    size_bytes: Some(parsed.size_bytes),
+                }),
             })
             .await?;
 
-        Ok(IngestOutcome::Rejected {
-            idempotent: persisted.idempotent,
-            flood_control: None,
-        })
+        Ok(rejected_outcome(persisted.idempotent, None))
     }
 
     async fn persist_rejected_raw_mail_control(
         &self,
-        receipt: InboundReceipt,
-        auth: crate::inbound::types::InboundAuthResults,
-        mut security: InboundSecurityRecord,
-        rejection_reason: &'static str,
-        size_bytes: i64,
-        flood_control: FloodControlRejection,
+        rejection: RawMailControlRejection,
     ) -> AppResult<IngestOutcome> {
+        let RawMailControlRejection {
+            receipt,
+            auth,
+            mut security,
+            rejection_reason,
+            size_bytes,
+            flood_control,
+        } = rejection;
         security.disposition = SecurityDisposition::Rejected;
         let persisted = self
             .repository
             .persist_rejected_inbound(PersistRejectedInboundRequest {
                 auth,
-                audit: rejected_audit(
-                    receipt.ses_message_id,
-                    Some(receipt.raw_mail.key),
-                    receipt.recipients,
-                    None,
+                audit: rejected_audit(RejectedAuditRequest {
+                    ses_message_id: receipt.ses_message_id,
+                    s3_raw_key: Some(receipt.raw_mail.key),
+                    envelope_recipients: receipt.recipients,
+                    from: None,
                     security,
-                    rejection_reason,
-                    Some(size_bytes),
-                ),
+                    rejection_reason: rejection_reason.to_string(),
+                    size_bytes: Some(size_bytes),
+                }),
             })
             .await?;
 
-        Ok(IngestOutcome::Rejected {
-            idempotent: persisted.idempotent,
-            flood_control: Some(flood_control),
-        })
+        Ok(rejected_outcome(persisted.idempotent, Some(flood_control)))
     }
 }
 
@@ -318,6 +377,16 @@ enum IngestOutcome {
 enum FloodControlRejection {
     Oversize,
     HourlyBytes,
+}
+
+#[derive(Debug, Clone)]
+struct RawMailControlRejection {
+    receipt: InboundReceipt,
+    auth: InboundAuthResults,
+    security: InboundSecurityRecord,
+    rejection_reason: &'static str,
+    size_bytes: i64,
+    flood_control: FloodControlRejection,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -379,6 +448,24 @@ fn raw_size_to_i64(size_bytes: usize) -> i64 {
 fn rejected_record(mut security: InboundSecurityRecord) -> InboundSecurityRecord {
     security.disposition = SecurityDisposition::Rejected;
     security
+}
+
+fn rejected_outcome(
+    idempotent: bool,
+    flood_control: Option<FloodControlRejection>,
+) -> IngestOutcome {
+    IngestOutcome::Rejected {
+        idempotent,
+        flood_control,
+    }
+}
+
+fn outcome_from_disposition(disposition: SecurityDisposition, idempotent: bool) -> IngestOutcome {
+    match disposition {
+        SecurityDisposition::Accepted => IngestOutcome::Accepted { idempotent },
+        SecurityDisposition::Quarantined => IngestOutcome::Quarantined { idempotent },
+        SecurityDisposition::Rejected => rejected_outcome(idempotent, None),
+    }
 }
 
 #[allow(dead_code)]

@@ -275,6 +275,28 @@ pub struct OutboundSendSummary {
     pub suppressed: usize,
 }
 
+impl OutboundSendSummary {
+    fn record(&mut self, outcome: OutboundWorkOutcome) {
+        match outcome {
+            OutboundWorkOutcome::Sent => self.sent += 1,
+            OutboundWorkOutcome::Retried => self.retried += 1,
+            OutboundWorkOutcome::Failed => self.failed += 1,
+            OutboundWorkOutcome::Suppressed => {
+                self.failed += 1;
+                self.suppressed += 1;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutboundWorkOutcome {
+    Sent,
+    Retried,
+    Failed,
+    Suppressed,
+}
+
 #[async_trait]
 pub trait OutboundService: Send + Sync {
     async fn compose_message(
@@ -354,53 +376,56 @@ impl OutboundSendWorker {
         };
 
         for item in work {
-            if let Some(address) = self
-                .outbound
-                .suppressed_recipient(&item.to_addresses)
-                .await?
-            {
-                self.outbound
-                    .mark_send_permanent_failure(
-                        &item.work_id,
-                        &format!("recipient {address} is suppressed"),
-                    )
-                    .await?;
-                summary.failed += 1;
-                summary.suppressed += 1;
-                continue;
-            }
-
-            let send_result = self
-                .mail_sender
-                .send_mail(OutboundMailRequest {
-                    from_address: item.from_address.clone(),
-                    to_addresses: item.to_addresses.clone(),
-                    raw_message: item.raw_message.clone(),
-                })
-                .await;
-            match send_result {
-                Ok(response) => {
-                    self.outbound
-                        .mark_send_success(&item.work_id, &response.provider_message_id)
-                        .await?;
-                    summary.sent += 1;
-                }
-                Err(err) if item.attempt_count >= MAX_SEND_ATTEMPTS => {
-                    self.outbound
-                        .mark_send_permanent_failure(&item.work_id, &err.public_message())
-                        .await?;
-                    summary.failed += 1;
-                }
-                Err(err) => {
-                    self.outbound
-                        .mark_send_retry(&item.work_id, &err.public_message())
-                        .await?;
-                    summary.retried += 1;
-                }
-            }
+            let outcome = self.process_work_item(item).await?;
+            summary.record(outcome);
         }
 
         Ok(summary)
+    }
+
+    async fn process_work_item(&self, item: ClaimedOutboundWork) -> AppResult<OutboundWorkOutcome> {
+        if let Some(address) = self
+            .outbound
+            .suppressed_recipient(&item.to_addresses)
+            .await?
+        {
+            self.outbound
+                .mark_send_permanent_failure(
+                    &item.work_id,
+                    &format!("recipient {address} is suppressed"),
+                )
+                .await?;
+            return Ok(OutboundWorkOutcome::Suppressed);
+        }
+
+        let send_result = self
+            .mail_sender
+            .send_mail(OutboundMailRequest {
+                from_address: item.from_address.clone(),
+                to_addresses: item.to_addresses.clone(),
+                raw_message: item.raw_message.clone(),
+            })
+            .await;
+        match send_result {
+            Ok(response) => {
+                self.outbound
+                    .mark_send_success(&item.work_id, &response.provider_message_id)
+                    .await?;
+                Ok(OutboundWorkOutcome::Sent)
+            }
+            Err(err) if item.attempt_count >= MAX_SEND_ATTEMPTS => {
+                self.outbound
+                    .mark_send_permanent_failure(&item.work_id, &err.public_message())
+                    .await?;
+                Ok(OutboundWorkOutcome::Failed)
+            }
+            Err(err) => {
+                self.outbound
+                    .mark_send_retry(&item.work_id, &err.public_message())
+                    .await?;
+                Ok(OutboundWorkOutcome::Retried)
+            }
+        }
     }
 }
 
@@ -807,13 +832,7 @@ impl PgOutboundService {
             .begin()
             .await
             .map_err(|err| AppError::Database(err.to_string()))?;
-        let thread_id = match request.thread_id {
-            Some(thread_id) => {
-                merge_thread_participants(&mut tx, thread_id, &request).await?;
-                thread_id
-            }
-            None => insert_outbound_thread(&mut tx, &request).await?,
-        };
+        let thread_id = resolve_outbound_thread(&mut tx, request.thread_id, &request).await?;
 
         let message_id =
             insert_outbound_message(&mut tx, thread_id, &rfc_message_id, &request).await?;
@@ -1524,6 +1543,20 @@ async fn enforce_rate_limit(pool: &DbPool, from_address_normalized: &str) -> App
     }
 
     Ok(())
+}
+
+async fn resolve_outbound_thread(
+    tx: &mut Transaction<'_, Postgres>,
+    thread_id: Option<Uuid>,
+    request: &EnqueueOutboundMessage,
+) -> AppResult<Uuid> {
+    match thread_id {
+        Some(thread_id) => {
+            merge_thread_participants(tx, thread_id, request).await?;
+            Ok(thread_id)
+        }
+        None => insert_outbound_thread(tx, request).await,
+    }
 }
 
 async fn insert_outbound_thread(

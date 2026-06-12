@@ -5,8 +5,9 @@ import { createAuthClient, type AuthState } from "./auth";
 type FakeSession = {
   accessToken: string;
   idClaims: Record<string, unknown>;
-  valid?: boolean;
-};
+} & Partial<{
+  valid: boolean;
+}>;
 
 class FakeAdapter {
   session: FakeSession | null = null;
@@ -163,6 +164,7 @@ describe("auth client", () => {
       status: "signed-in",
       user: {
         subject: "signed-in-sub",
+        email: null,
         username: "chris",
       },
     });
@@ -198,7 +200,7 @@ describe("auth client", () => {
     expect(adapter.mfaCode).toBe("123456");
     expect(client.getState()).toEqual<AuthState>({
       status: "signed-in",
-      user: { subject: "mfa-sub", username: "chris" },
+      user: { subject: "mfa-sub", email: null, username: "chris" },
     });
     await expect(client.getAccessToken()).resolves.toBe("mfa-access-token");
   });
@@ -230,7 +232,7 @@ describe("auth client", () => {
     expect(adapter.setupCode).toBe("654321");
     expect(client.getState()).toEqual<AuthState>({
       status: "signed-in",
-      user: { subject: "setup-sub", username: "chris" },
+      user: { subject: "setup-sub", email: null, username: "chris" },
     });
     await expect(client.getAccessToken()).resolves.toBe("setup-access-token");
   });
@@ -298,7 +300,7 @@ describe("auth client", () => {
     expect(adapter.refreshCount).toBe(1);
     expect(client.getState()).toEqual<AuthState>({
       status: "signed-in",
-      user: { subject: "user-sub", username: "chris" },
+      user: { subject: "user-sub", email: null, username: "chris" },
     });
   });
 });

@@ -1,0 +1,18 @@
+# Existing files above the 400-line source limit.
+# Format: <path> <maximum current lines>
+backend/api/src/lib.rs 1291
+backend/ingest/src/lib.rs 431
+backend/shared/src/auth.rs 421
+backend/shared/src/domain_config.rs 454
+backend/shared/src/feedback.rs 432
+backend/shared/src/forwarding.rs 706
+backend/shared/src/inbound/mime.rs 424
+backend/shared/src/inbound/receipt_gate.rs 605
+backend/shared/src/inbound/repository.rs 560
+backend/shared/src/inbound/service.rs 474
+backend/shared/src/mailbox.rs 1366
+backend/shared/src/outbound.rs 2791
+backend/shared/tests/inbound_service.rs 503
+frontend/src/mailbox.test.tsx 573
+frontend/src/mailbox.tsx 1131
+frontend/src/routingAdmin.tsx 408

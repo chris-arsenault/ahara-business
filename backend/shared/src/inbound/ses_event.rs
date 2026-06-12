@@ -243,7 +243,8 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        RawMailLocation, parse_ses_receipt_event, parse_ses_receipt_event_with_raw_mail_location,
+        InboundReceipt, RawMailLocation, parse_ses_receipt_event,
+        parse_ses_receipt_event_with_raw_mail_location,
     };
 
     fn fixture(name: &str) -> Value {
@@ -270,6 +271,12 @@ mod tests {
 
         assert_eq!(receipts.len(), 1);
         let receipt = &receipts[0];
+        assert_clean_receipt_identity(receipt);
+        assert_clean_receipt_storage(receipt);
+        assert_clean_receipt_verdicts(receipt);
+    }
+
+    fn assert_clean_receipt_identity(receipt: &InboundReceipt) {
         assert_eq!(receipt.ses_message_id, "ses-message-1");
         assert_eq!(
             receipt.timestamp.as_deref(),
@@ -279,8 +286,14 @@ mod tests {
             receipt.recipients,
             vec!["contact@ahara.io".to_string(), "chris@ahara.io".to_string()]
         );
+    }
+
+    fn assert_clean_receipt_storage(receipt: &InboundReceipt) {
         assert_eq!(receipt.raw_mail.bucket, "ahara-business-raw-mail-test");
         assert_eq!(receipt.raw_mail.key, "raw/ses-message-1");
+    }
+
+    fn assert_clean_receipt_verdicts(receipt: &InboundReceipt) {
         assert_eq!(receipt.verdicts.spf.as_deref(), Some("PASS"));
         assert_eq!(receipt.verdicts.dkim.as_deref(), Some("PASS"));
         assert_eq!(receipt.verdicts.dmarc.as_deref(), Some("PASS"));

@@ -91,15 +91,16 @@ export type Contact = {
 
 export type CreateContactRequest = {
   display_name: string;
-  primary_address?: string | null;
-  notes?: string | null;
-};
+} & Partial<{
+  primary_address: string | null;
+  notes: string | null;
+}>;
 
-export type UpdateContactRequest = {
-  display_name?: string;
-  primary_address?: string | null;
-  notes?: string;
-};
+export type UpdateContactRequest = Partial<{
+  display_name: string;
+  primary_address: string | null;
+  notes: string;
+}>;
 
 export type RoutingPolicy = "allowlist" | "catchall";
 
@@ -115,10 +116,10 @@ export type AcceptedAddress = {
   active: boolean;
 };
 
-export type UpdateDomainRequest = {
-  routing_policy?: RoutingPolicy;
-  active?: boolean;
-};
+export type UpdateDomainRequest = Partial<{
+  routing_policy: RoutingPolicy;
+  active: boolean;
+}>;
 
 export type OutboundRecipient = {
   kind: "to" | "cc" | "bcc";
@@ -139,19 +140,21 @@ export type OutboundMessageStatus =
 export type ComposeMessageRequest = {
   from_address: string;
   to: string[];
-  cc?: string[];
-  bcc?: string[];
   subject: string;
   body_text: string;
-};
+} & Partial<{
+  cc: string[];
+  bcc: string[];
+}>;
 
 export type ReplyMessageRequest = {
   from_address: string;
-  to?: string[];
-  cc?: string[];
-  bcc?: string[];
   body_text: string;
-};
+} & Partial<{
+  to: string[];
+  cc: string[];
+  bcc: string[];
+}>;
 
 export type OutboundMessageQueued = {
   message_id: string;

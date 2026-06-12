@@ -1,5 +1,5 @@
-/* eslint-disable complexity, max-lines, max-lines-per-function, react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
-import { useEffect, useState, type FormEvent } from "react";
+/* eslint-disable complexity, max-lines-per-function, react-hooks/exhaustive-deps */
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
   Inbox,
   Paperclip,
@@ -10,64 +10,33 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import type { ApiClient } from "./api";
+import type {
+  DetailState,
+  InboxMailboxContentProps,
+  MailboxApi,
+  MailboxListProps,
+  MailboxMode,
+  MailboxState,
+  MailboxViewProps,
+  MessageDetailProps,
+  OutboundDetailState,
+  SentMailboxContentProps,
+  SentMailboxState,
+  SentMessageListProps,
+  ThreadDetailProps,
+} from "./mailboxTypes";
 import { formatBytes, sanitizeAttachmentName } from "./textRendering";
 import type {
   Contact,
   MailboxAttachment,
   MailboxMessageDetail,
   MailboxMessageSummary,
-  MailboxThreadDetail,
   OutboundMessageDetail,
   OutboundMessageSummary,
   ReplyMessageRequest,
 } from "./types";
 
-export type MailboxApi = Pick<ApiClient, "fetchMailboxMessages"> &
-  Partial<
-    Pick<
-      ApiClient,
-      | "fetchMessageDetail"
-      | "fetchThreadDetail"
-      | "updateMessageState"
-      | "linkMessageContact"
-      | "listContacts"
-      | "searchMessages"
-      | "composeMessage"
-      | "replyToMessage"
-      | "listOutboundMessages"
-      | "fetchOutboundMessage"
-    >
-  >;
-
-type MailboxViewProps = {
-  apiClient: MailboxApi;
-};
-
-type MailboxState =
-  | { status: "loading" }
-  | { status: "ready"; messages: MailboxMessageSummary[] }
-  | { status: "error"; message: string };
-
-type DetailState =
-  | { status: "empty" }
-  | { status: "loading" }
-  | { status: "ready"; thread: MailboxThreadDetail }
-  | { status: "error"; message: string };
-
-type SentMailboxState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "ready"; messages: OutboundMessageSummary[] }
-  | { status: "error"; message: string };
-
-type OutboundDetailState =
-  | { status: "empty" }
-  | { status: "loading" }
-  | { status: "ready"; message: OutboundMessageDetail }
-  | { status: "error"; message: string };
-
-type MailboxMode = "inbox" | "sent";
+export type { MailboxApi } from "./mailboxTypes";
 
 export function MailboxView({ apiClient }: MailboxViewProps) {
   const [mailboxMode, setMailboxMode] = useState<MailboxMode>("inbox");
@@ -88,6 +57,45 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
   const [actionError, setActionError] = useState<string>();
   const [searchQuery, setSearchQuery] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
+  const showInbox = useCallback(() => setMailboxMode("inbox"), []);
+  const showSent = useCallback(() => setMailboxMode("sent"), []);
+  const toggleCompose = useCallback(() => setComposeOpen((open) => !open), []);
+  const refreshCurrentMailbox = useCallback(() => {
+    if (mailboxMode === "sent") {
+      void loadSentMessages();
+      return;
+    }
+    void loadMessages();
+  }, [apiClient, mailboxMode]);
+  const handleComposeQueued = useCallback(() => {
+    void loadMessages();
+    if (mailboxMode === "sent") {
+      void loadSentMessages();
+    }
+  }, [apiClient, mailboxMode]);
+  const handleSelectOutbound = useCallback(
+    (message: OutboundMessageSummary) => void loadOutboundDetail(message),
+    [apiClient],
+  );
+  const handleChangeMessageContact = useCallback(
+    (message: MailboxMessageDetail, contactId: string | null) =>
+      void changeMessageContact(message, contactId),
+    [apiClient],
+  );
+  const handleReply = useCallback(
+    (message: MailboxMessageDetail, request: ReplyMessageRequest) =>
+      replyToMessage(message, request),
+    [apiClient],
+  );
+  const handleSelectMessage = useCallback(
+    (message: MailboxMessageSummary) => void loadMessageDetail(message),
+    [apiClient],
+  );
+  const handleToggleRead = useCallback(
+    (message: MailboxMessageSummary | MailboxMessageDetail) =>
+      void toggleRead(message),
+    [apiClient],
+  );
 
   async function loadMessages() {
     setState({ status: "loading" });
@@ -151,7 +159,7 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
             data-active={mailboxMode === "inbox"}
             type="button"
             aria-pressed={mailboxMode === "inbox"}
-            onClick={() => setMailboxMode("inbox")}
+            onClick={showInbox}
           >
             <Inbox aria-hidden="true" size={15} />
             Inbox
@@ -161,7 +169,7 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
             data-active={mailboxMode === "sent"}
             type="button"
             aria-pressed={mailboxMode === "sent"}
-            onClick={() => setMailboxMode("sent")}
+            onClick={showSent}
           >
             <Send aria-hidden="true" size={15} />
             Sent
@@ -188,11 +196,7 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
         <button
           className="icon-button"
           type="button"
-          onClick={() =>
-            mailboxMode === "sent"
-              ? void loadSentMessages()
-              : void loadMessages()
-          }
+          onClick={refreshCurrentMailbox}
           title={
             mailboxMode === "sent" ? "Refresh sent mail" : "Refresh mailbox"
           }
@@ -205,7 +209,7 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
         <button
           className="secondary-button"
           type="button"
-          onClick={() => setComposeOpen((open) => !open)}
+          onClick={toggleCompose}
         >
           <PenLine aria-hidden="true" size={16} />
           Compose
@@ -213,19 +217,11 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
       </header>
 
       {composeOpen ? (
-        <ComposeMessage
-          apiClient={apiClient}
-          onQueued={() => {
-            void loadMessages();
-            if (mailboxMode === "sent") {
-              void loadSentMessages();
-            }
-          }}
-        />
+        <ComposeMessage apiClient={apiClient} onQueued={handleComposeQueued} />
       ) : null}
       {mailboxMode === "sent" ? (
         <SentMailboxContent
-          onSelectOutbound={(message) => void loadOutboundDetail(message)}
+          onSelectOutbound={handleSelectOutbound}
           outboundDetailState={outboundDetailState}
           selectedOutboundId={selectedOutboundId}
           sentState={sentState}
@@ -234,12 +230,10 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
         <InboxMailboxContent
           contacts={contacts}
           detailState={detailState}
-          onChangeMessageContact={(message, contactId) =>
-            void changeMessageContact(message, contactId)
-          }
-          onReply={(message, request) => replyToMessage(message, request)}
-          onSelectMessage={(message) => void loadMessageDetail(message)}
-          onToggleRead={(message) => void toggleRead(message)}
+          onChangeMessageContact={handleChangeMessageContact}
+          onReply={handleReply}
+          onSelectMessage={handleSelectMessage}
+          onToggleRead={handleToggleRead}
           selectedMessageId={selectedMessageId}
           state={state}
         />
@@ -444,22 +438,7 @@ function InboxMailboxContent({
   onToggleRead,
   selectedMessageId,
   state,
-}: {
-  contacts: Contact[];
-  detailState: DetailState;
-  onChangeMessageContact: (
-    message: MailboxMessageDetail,
-    contactId: string | null,
-  ) => void;
-  onReply: (
-    message: MailboxMessageDetail,
-    request: ReplyMessageRequest,
-  ) => Promise<void>;
-  onSelectMessage: (message: MailboxMessageSummary) => void;
-  onToggleRead: (message: MailboxMessageSummary | MailboxMessageDetail) => void;
-  selectedMessageId?: string;
-  state: MailboxState;
-}) {
+}: InboxMailboxContentProps) {
   if (state.status === "loading") {
     return (
       <div className="empty-state" role="status">
@@ -499,12 +478,7 @@ function SentMailboxContent({
   outboundDetailState,
   selectedOutboundId,
   sentState,
-}: {
-  onSelectOutbound: (message: OutboundMessageSummary) => void;
-  outboundDetailState: OutboundDetailState;
-  selectedOutboundId?: string;
-  sentState: SentMailboxState;
-}) {
+}: SentMailboxContentProps) {
   if (sentState.status === "idle" || sentState.status === "loading") {
     return (
       <div className="empty-state" role="status">
@@ -537,12 +511,7 @@ export function MailboxList({
   selectedMessageId,
   onSelectMessage,
   onToggleRead,
-}: {
-  messages: MailboxMessageSummary[];
-  selectedMessageId?: string;
-  onSelectMessage?: (message: MailboxMessageSummary) => void;
-  onToggleRead?: (message: MailboxMessageSummary) => void;
-}) {
+}: MailboxListProps) {
   if (messages.length === 0) {
     return <div className="empty-state">No accepted messages</div>;
   }
@@ -617,11 +586,7 @@ function SentMessageList({
   messages,
   selectedMessageId,
   onSelectMessage,
-}: {
-  messages: OutboundMessageSummary[];
-  selectedMessageId?: string;
-  onSelectMessage?: (message: OutboundMessageSummary) => void;
-}) {
+}: SentMessageListProps) {
   if (messages.length === 0) {
     return <div className="empty-state">No sent messages</div>;
   }
@@ -800,19 +765,7 @@ export function ThreadDetail({
   onToggleRead,
   onContactChange,
   onReply,
-}: {
-  thread: MailboxThreadDetail;
-  contacts?: Contact[];
-  onToggleRead?: (message: MailboxMessageDetail) => void;
-  onContactChange?: (
-    message: MailboxMessageDetail,
-    contactId: string | null,
-  ) => void;
-  onReply?: (
-    message: MailboxMessageDetail,
-    request: ReplyMessageRequest,
-  ) => Promise<void>;
-}) {
+}: ThreadDetailProps) {
   return (
     <section className="thread-detail" aria-label="Thread detail">
       {thread.messages.map((message) => (
@@ -835,20 +788,9 @@ export function MessageDetail({
   onToggleRead,
   onContactChange,
   onReply,
-}: {
-  message: MailboxMessageDetail;
-  contacts?: Contact[];
-  onToggleRead?: (message: MailboxMessageDetail) => void;
-  onContactChange?: (
-    message: MailboxMessageDetail,
-    contactId: string | null,
-  ) => void;
-  onReply?: (
-    message: MailboxMessageDetail,
-    request: ReplyMessageRequest,
-  ) => Promise<void>;
-}) {
+}: MessageDetailProps) {
   const [replyOpen, setReplyOpen] = useState(false);
+  const closeReply = useCallback(() => setReplyOpen(false), []);
   return (
     <article className="message-detail" aria-label="Message detail">
       <header className="message-detail-header">
@@ -918,7 +860,7 @@ export function MessageDetail({
         <ReplyMessageForm
           message={message}
           onReply={onReply}
-          onQueued={() => setReplyOpen(false)}
+          onQueued={closeReply}
         />
       ) : null}
       {message.attachments.length > 0 ? (

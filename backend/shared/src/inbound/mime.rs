@@ -200,7 +200,7 @@ fn parse_references(value: Option<String>) -> Vec<String> {
 mod tests {
     use super::{InboundParseError, parse_raw_mime};
     use crate::inbound::limits::IngestLimits;
-    use crate::inbound::types::InboundRecipientKind;
+    use crate::inbound::types::{InboundRecipientKind, ParsedInboundMessage};
 
     fn bytes(name: &str) -> &'static [u8] {
         match name {
@@ -359,10 +359,19 @@ mod tests {
     fn inbound_mime_extracts_inbound_metadata() {
         let message = parse_raw_mime(bytes("threaded_reply.eml"), IngestLimits::default()).unwrap();
 
+        assert_sender_metadata(&message);
+        assert_thread_metadata(&message);
+        assert_inbound_recipients(&message);
+    }
+
+    fn assert_sender_metadata(message: &ParsedInboundMessage) {
         assert_eq!(message.from.address, "sender@example.test");
         assert_eq!(message.from.address_normalized, "sender@example.test");
         assert_eq!(message.from.display_name, "Responder");
         assert_eq!(message.subject, "Re: Project thread");
+    }
+
+    fn assert_thread_metadata(message: &ParsedInboundMessage) {
         assert_eq!(message.message_date_epoch, Some(1781113200));
         assert_eq!(
             message.rfc_message_id.as_deref(),
@@ -379,6 +388,9 @@ mod tests {
                 "<previous@example.test>".to_string()
             ]
         );
+    }
+
+    fn assert_inbound_recipients(message: &ParsedInboundMessage) {
         assert_eq!(message.recipients.len(), 3);
         assert_eq!(message.recipients[0].kind, InboundRecipientKind::To);
         assert_eq!(message.recipients[0].mailbox.address, "contact@ahara.io");

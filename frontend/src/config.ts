@@ -1,14 +1,16 @@
-type RuntimeConfig = {
-  apiBaseUrl?: string;
-  appBaseUrl?: string;
-  productName?: string;
-  cognitoUserPoolId?: string;
-  cognitoClientId?: string;
-};
+type RuntimeGlobal<T> = T | undefined;
+
+type RuntimeConfig = Partial<{
+  apiBaseUrl: string;
+  appBaseUrl: string;
+  productName: string;
+  cognitoUserPoolId: string;
+  cognitoClientId: string;
+}>;
 
 declare global {
   interface Window {
-    __APP_CONFIG__?: RuntimeConfig;
+    __APP_CONFIG__: RuntimeGlobal<RuntimeConfig>;
   }
 }
 

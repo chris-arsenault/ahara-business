@@ -28,6 +28,17 @@ pub struct PersistRejectedInboundRequest {
     pub auth: InboundAuthResults,
 }
 
+#[derive(Debug, Clone)]
+pub struct RejectedAuditRequest {
+    pub ses_message_id: String,
+    pub s3_raw_key: Option<String>,
+    pub envelope_recipients: Vec<String>,
+    pub from: Option<InboundMailbox>,
+    pub security: InboundSecurityRecord,
+    pub rejection_reason: String,
+    pub size_bytes: Option<i64>,
+}
+
 #[async_trait]
 pub trait InboundRepository: Send + Sync {
     async fn persist_inbound(
@@ -526,24 +537,16 @@ fn disposition_from_db(disposition: &str) -> AppResult<SecurityDisposition> {
     }
 }
 
-pub fn rejected_audit(
-    ses_message_id: impl Into<String>,
-    s3_raw_key: Option<String>,
-    envelope_recipients: Vec<String>,
-    from: Option<InboundMailbox>,
-    security: InboundSecurityRecord,
-    rejection_reason: impl Into<String>,
-    size_bytes: Option<i64>,
-) -> RejectedInboundAudit {
+pub fn rejected_audit(request: RejectedAuditRequest) -> RejectedInboundAudit {
     RejectedInboundAudit {
-        ses_message_id: ses_message_id.into(),
-        s3_raw_key,
-        envelope_recipients,
-        from: from.unwrap_or_else(InboundMailbox::unknown),
+        ses_message_id: request.ses_message_id,
+        s3_raw_key: request.s3_raw_key,
+        envelope_recipients: request.envelope_recipients,
+        from: request.from.unwrap_or_else(InboundMailbox::unknown),
         status: InboundMessageStatus::Rejected,
-        security,
-        rejection_reason: rejection_reason.into(),
-        size_bytes,
+        security: request.security,
+        rejection_reason: request.rejection_reason,
+        size_bytes: request.size_bytes,
     }
 }
 

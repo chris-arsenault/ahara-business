@@ -1,9 +1,9 @@
-.PHONY: ci lint fmt typecheck test terraform-fmt-check build deploy
+.PHONY: ci lint fmt typecheck test file-length-check terraform-fmt-check build deploy
 
-ci: lint fmt typecheck test terraform-fmt-check
+ci: lint fmt typecheck test file-length-check terraform-fmt-check
 
 lint:
-	cd backend && CARGO_TARGET_DIR=target-clippy cargo clippy --release -- -D warnings -W clippy::cognitive_complexity
+	cd backend && CARGO_TARGET_DIR=target-clippy cargo clippy --workspace --all-targets --release -- -D warnings -W clippy::cognitive_complexity
 	cd frontend && pnpm exec eslint .
 
 fmt:
@@ -17,6 +17,9 @@ test:
 	cd backend && CARGO_TARGET_DIR=target-cov cargo test --release --lib
 	scripts/run-backend-integration-tests.sh
 	cd frontend && pnpm exec vitest run --coverage
+
+file-length-check:
+	scripts/check-file-lengths.sh
 
 terraform-fmt-check:
 	terraform fmt -check -recursive infrastructure/terraform/

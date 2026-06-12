@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import type { AuthClient, AuthState } from "./auth";
 import type { MailboxApi } from "./mailbox";
+import type { RoutingAdminApi } from "./routingAdmin";
 import type { MailboxMessageSummary } from "./types";
 
 class FakeAuthClient implements AuthClient {
@@ -49,21 +50,21 @@ class FakeAuthClient implements AuthClient {
     }
     this.setState({
       status: "signed-in",
-      user: { username },
+      user: { subject: null, email: null, username },
     });
   }
 
   async confirmMfa(code: string) {
     this.setState({
       status: "signed-in",
-      user: { username: `mfa-${code}` },
+      user: { subject: null, email: null, username: `mfa-${code}` },
     });
   }
 
   async verifyMfaSetup(code: string) {
     this.setState({
       status: "signed-in",
-      user: { username: `setup-${code}` },
+      user: { subject: null, email: null, username: `setup-${code}` },
     });
   }
 
@@ -99,28 +100,29 @@ const message: MailboxMessageSummary = {
   security_disposition: "accepted",
 };
 
+const defaultApiClient: MailboxApi = {
+  fetchMailboxMessages: async () => [message],
+};
+
+function renderApp(
+  authClient: AuthClient,
+  apiClient: MailboxApi & Partial<RoutingAdminApi> = defaultApiClient,
+) {
+  return render(<App authClient={authClient} apiClient={apiClient} />);
+}
+
 afterEach(() => cleanup());
 
 describe("App", () => {
   it("renders auth loading state", () => {
-    render(
-      <App
-        authClient={new FakeAuthClient({ status: "loading" }, "pending")}
-        apiClient={{ fetchMailboxMessages: async () => [message] }}
-      />,
-    );
+    renderApp(new FakeAuthClient({ status: "loading" }, "pending"));
 
     expect(screen.getByText("Loading")).toBeInTheDocument();
     expect(screen.queryByText("Invoice")).not.toBeInTheDocument();
   });
 
   it("renders signed-out sign-in form", async () => {
-    render(
-      <App
-        authClient={new FakeAuthClient({ status: "signed-out" })}
-        apiClient={{ fetchMailboxMessages: async () => [message] }}
-      />,
-    );
+    renderApp(new FakeAuthClient({ status: "signed-out" }));
 
     expect(
       await screen.findByRole("button", { name: "Sign in" }),
@@ -132,12 +134,7 @@ describe("App", () => {
   it("submits non-email username and password from the sign-in form", async () => {
     const user = userEvent.setup();
     const authClient = new FakeAuthClient({ status: "signed-out" });
-    render(
-      <App
-        authClient={authClient}
-        apiClient={{ fetchMailboxMessages: async () => [message] }}
-      />,
-    );
+    renderApp(authClient);
 
     await user.type(screen.getByLabelText("Username"), "chris");
     await user.type(screen.getByLabelText("Password"), "correct-password");
@@ -149,16 +146,11 @@ describe("App", () => {
 
   it("renders and submits an MFA verification code", async () => {
     const user = userEvent.setup();
-    render(
-      <App
-        authClient={
-          new FakeAuthClient({
-            status: "mfa-required",
-            challenge: "totp",
-          })
-        }
-        apiClient={{ fetchMailboxMessages: async () => [message] }}
-      />,
+    renderApp(
+      new FakeAuthClient({
+        status: "mfa-required",
+        challenge: "totp",
+      }),
     );
 
     await user.type(screen.getByLabelText("Authenticator code"), "123456");
@@ -169,17 +161,12 @@ describe("App", () => {
 
   it("renders and submits an MFA setup code", async () => {
     const user = userEvent.setup();
-    render(
-      <App
-        authClient={
-          new FakeAuthClient({
-            status: "mfa-setup",
-            secretCode: "setup-secret",
-            username: "chris",
-          })
-        }
-        apiClient={{ fetchMailboxMessages: async () => [message] }}
-      />,
+    renderApp(
+      new FakeAuthClient({
+        status: "mfa-setup",
+        secretCode: "setup-secret",
+        username: "chris",
+      }),
     );
 
     expect(screen.getByText("setup-secret")).toBeInTheDocument();
@@ -193,16 +180,15 @@ describe("App", () => {
   });
 
   it("renders signed-in mailbox list as the first screen", async () => {
-    render(
-      <App
-        authClient={
-          new FakeAuthClient({
-            status: "signed-in",
-            user: { email: "chris@example.test" },
-          })
-        }
-        apiClient={{ fetchMailboxMessages: async () => [message] }}
-      />,
+    renderApp(
+      new FakeAuthClient({
+        status: "signed-in",
+        user: {
+          subject: null,
+          email: "chris@example.test",
+          username: null,
+        },
+      }),
     );
 
     expect(await screen.findByText("Invoice")).toBeInTheDocument();
@@ -220,12 +206,7 @@ describe("App", () => {
       },
     };
 
-    render(
-      <App
-        authClient={new FakeAuthClient({ status: "loading" }, "pending")}
-        apiClient={apiClient}
-      />,
-    );
+    renderApp(new FakeAuthClient({ status: "loading" }, "pending"), apiClient);
 
     expect(fetched).toBe(false);
     expect(screen.queryByText("Invoice")).not.toBeInTheDocument();
@@ -233,63 +214,64 @@ describe("App", () => {
 
   it("opens the routing admin panel from signed-in navigation", async () => {
     const user = userEvent.setup();
-    render(
-      <App
-        authClient={
-          new FakeAuthClient({
-            status: "signed-in",
-            user: { email: "chris@example.test" },
-          })
-        }
-        apiClient={{
-          fetchMailboxMessages: async () => [message],
-          listDomains: async () => [
-            {
-              domain_name: "ahara.io",
-              routing_policy: "allowlist",
-              active: true,
-              addresses: [{ local_part: "chris", active: true }],
-            },
-          ],
-          updateDomain: async (_domainName, request) => ({
-            domain_name: "ahara.io",
-            routing_policy: request.routing_policy ?? "allowlist",
-            active: request.active ?? true,
-            addresses: [{ local_part: "chris", active: true }],
-          }),
-          addAddress: async (_domainName, localPart) => ({
-            local_part: localPart,
-            active: true,
-          }),
-          deactivateAddress: async (_domainName, localPart) => ({
-            local_part: localPart,
-            active: false,
-          }),
-          listForwardingRules: async () => [],
-          upsertForwardingRule: async (request) => ({
-            id: "rule-1",
-            domain_name: request.domain_name,
-            local_part: request.local_part,
-            address_id: `${request.domain_name}:${request.local_part}`,
-            target_address: request.target_address,
-            target_address_normalized: request.target_address.toLowerCase(),
-            active: true,
-            created_at: null,
-            updated_at: null,
-          }),
-          deactivateForwardingRule: async (ruleId) => ({
-            id: ruleId,
-            domain_name: "ahara.io",
-            local_part: "chris",
-            address_id: "ahara.io:chris",
-            target_address: "target@example.com",
-            target_address_normalized: "target@example.com",
-            active: false,
-            created_at: null,
-            updated_at: null,
-          }),
-        }}
-      />,
+    const apiClient: MailboxApi & Partial<RoutingAdminApi> = {
+      fetchMailboxMessages: async () => [message],
+      listDomains: async () => [
+        {
+          domain_name: "ahara.io",
+          routing_policy: "allowlist",
+          active: true,
+          addresses: [{ local_part: "chris", active: true }],
+        },
+      ],
+      updateDomain: async (_domainName, request) => ({
+        domain_name: "ahara.io",
+        routing_policy: request.routing_policy ?? "allowlist",
+        active: request.active ?? true,
+        addresses: [{ local_part: "chris", active: true }],
+      }),
+      addAddress: async (_domainName, localPart) => ({
+        local_part: localPart,
+        active: true,
+      }),
+      deactivateAddress: async (_domainName, localPart) => ({
+        local_part: localPart,
+        active: false,
+      }),
+      listForwardingRules: async () => [],
+      upsertForwardingRule: async (request) => ({
+        id: "rule-1",
+        domain_name: request.domain_name,
+        local_part: request.local_part,
+        address_id: `${request.domain_name}:${request.local_part}`,
+        target_address: request.target_address,
+        target_address_normalized: request.target_address.toLowerCase(),
+        active: true,
+        created_at: null,
+        updated_at: null,
+      }),
+      deactivateForwardingRule: async (ruleId) => ({
+        id: ruleId,
+        domain_name: "ahara.io",
+        local_part: "chris",
+        address_id: "ahara.io:chris",
+        target_address: "target@example.com",
+        target_address_normalized: "target@example.com",
+        active: false,
+        created_at: null,
+        updated_at: null,
+      }),
+    };
+    renderApp(
+      new FakeAuthClient({
+        status: "signed-in",
+        user: {
+          subject: null,
+          email: "chris@example.test",
+          username: null,
+        },
+      }),
+      apiClient,
     );
 
     await user.click(screen.getByRole("button", { name: "Routing" }));

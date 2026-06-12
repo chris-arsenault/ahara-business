@@ -9,10 +9,10 @@ import { MailboxView, type MailboxApi } from "./mailbox";
 import { RoutingAdmin, type RoutingAdminApi } from "./routingAdmin";
 import { buildTotpSetupUri } from "./totp";
 
-type AppProps = {
-  authClient?: AuthClient;
-  apiClient?: MailboxApi & Partial<RoutingAdminApi>;
-};
+type AppProps = Partial<{
+  authClient: AuthClient;
+  apiClient: MailboxApi & Partial<RoutingAdminApi>;
+}>;
 
 export function App({ authClient: injectedAuth, apiClient }: AppProps) {
   const authClient = useMemo(
@@ -227,7 +227,7 @@ function MfaSetupScreen({
   authClient: AuthClient;
   productName: string;
   secretCode: string;
-  username?: string;
+  username: string | null;
 }) {
   const [code, setCode] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

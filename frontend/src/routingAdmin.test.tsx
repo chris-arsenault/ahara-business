@@ -181,11 +181,9 @@ describe("RoutingAdmin", () => {
   });
 
   it("renders authenticated API errors", async () => {
-    const api: RoutingAdminApi = {
-      ...apiWithDomain().api,
-      listDomains: async () => {
-        throw new Error("unauthorized");
-      },
+    const { api } = apiWithDomain();
+    api.listDomains = async () => {
+      throw new Error("unauthorized");
     };
 
     render(<RoutingAdmin apiClient={api} />);
