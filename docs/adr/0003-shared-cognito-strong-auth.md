@@ -18,4 +18,4 @@ Use shared Cognito and extend the platform configuration for required TOTP or pa
 
 ## Consequences
 
-The implementation includes an `ahara-infra` phase for Cognito strong-auth support before the app relies on the public authenticated UI. The frontend and API continue to use platform-issued Cognito tokens rather than a project-specific identity store.
+Shared Cognito remains the identity source for the frontend, ALB, and API. The app uses platform-issued Cognito tokens rather than a project-specific identity store.

@@ -1,14 +1,16 @@
 # Frontend
 
-Vite React/TypeScript SPA scaffold for the public authenticated app surface.
+Vite React/TypeScript SPA for Ahara Mail.
 
-The app reads `window.__APP_CONFIG__` from the platform website runtime config
-and renders a neutral authenticated-app shell. It does not render mail content
-or call project API routes in M0.
+The app reads `window.__APP_CONFIG__` from the platform website runtime config,
+authenticates through the shared Cognito app client, and calls the project API
+with Cognito access tokens. The primary workspace includes mailbox reads,
+thread detail, read/unread state, search, contact linking, text-only
+compose/reply, sent mail, routing admin, and address-scoped forwarding rules.
 
-Mail UI work must keep ADR-0002 intact: stored plaintext only, no
-sender-provided HTML rendering, and sender-controlled names, links, and filenames
-treated as untrusted display data.
+Mail content rendering follows ADR-0002: stored plaintext only, no
+sender-provided HTML rendering, inert links, and untrusted display handling for
+sender names and attachment metadata.
 
 ## Verification
 

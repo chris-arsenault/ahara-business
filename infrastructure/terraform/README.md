@@ -18,16 +18,16 @@ Current modules:
 | `mail_data.tf` | Account context for globally unique mail resource names |
 | `mail_feedback.tf` | SES bounce and complaint feedback topics wired to the feedback handler |
 | `mail_iam.tf` | Scoped Lambda runtime permissions for raw mail and SES sending |
-| `mail_receiving.tf` | Dormant SES receipt rule set and disabled S3 + ingest rule |
+| `mail_receiving.tf` | Active SES receipt rule set with receipt gate, S3 storage, and ingest invocation |
+| `mail_sending.tf` | EventBridge schedule and Lambda permission for the outbound send worker |
 | `mail_ses.tf` | SES domain identity, verification TXT record, and DKIM CNAMEs |
 | `mail_storage.tf` | Private raw MIME S3 bucket, lifecycle, encryption, and SES write policy |
 | `ssm.tf` | Shared database SSM parameter lookups |
 | `outputs.tf` | Website, API, Cognito, raw mail bucket, SES identity, receipt rule set, feedback topic, and alarm topic outputs |
 
-M3 intentionally keeps inbound mail unroutable. It creates SES identity/DKIM
-records, private raw-mail storage, SNS feedback topics, alarms, and a dormant
-disabled receipt rule for review, but it creates no MX records and no active
-receipt rule set.
+The active receipt rule set routes `chris@ahara.io` and `contact@ahara.io`
+through the receipt gate, raw-mail S3 storage, and async ingest Lambda. Route 53
+publishes the domain MX record for SES inbound in `us-east-1`.
 
 ## Verification
 

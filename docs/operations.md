@@ -1,9 +1,8 @@
 # Operations
 
-## S3 and IAM hardening review
+## S3 and IAM hardening
 
 The mail infrastructure is project-owned and uses scoped platform resources.
-This review records the M8 release hardening checks for inbound mail.
 Use the controlled [smoke check](smoke-check.md) after deployment.
 
 ### Raw MIME storage

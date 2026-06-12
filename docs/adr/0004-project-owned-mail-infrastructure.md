@@ -18,4 +18,4 @@ Manage mail resources in this project's Terraform, and add first-class SES and m
 
 ## Consequences
 
-The first implementation milestone includes cross-repo platform work. Project Terraform can remain the source of truth for SES/S3/SNS resources while the deployer role stays least-privilege.
+Project Terraform remains the source of truth for SES, S3, and SNS resources while the deployer role stays least-privilege.

@@ -1,25 +1,26 @@
 # Backend
 
-Rust Lambda workspace for the Ahara Business app scaffold.
+Rust Lambda workspace for Ahara Mail.
 
 ## Workspace Members
 
 | Member | Purpose |
 | ---- | ---- |
-| `shared` | Shared library crate with smoke-tested exported helpers |
-| `api` | Axum/lambda_http API Lambda with `/health` |
-| `ingest` | No-op Lambda event handler scaffold |
-| `send-worker` | No-op Lambda event handler scaffold |
-| `feedback-handler` | No-op Lambda event handler scaffold |
+| `shared` | Shared mail, auth, database, routing, inbound, outbound, feedback, and observability logic |
+| `api` | Axum/lambda_http API Lambda for health, user context, domains, contacts, mailbox, outbound, and forwarding routes |
+| `receipt-gate` | SES synchronous receipt Lambda for accepted-recipient checks and count-based flood control |
+| `ingest` | SES async ingest Lambda for raw MIME fetch, parsing, security disposition, persistence, and forwarding enqueue |
+| `send-worker` | Scheduled outbound worker for SES send, retry, suppression checks, and status updates |
+| `feedback-handler` | SNS feedback handler for SES bounce and complaint suppression/status updates |
 
-The worker binaries parse generic JSON Lambda events, emit non-PII logs, and
-return success. Mail parsing, sending, persistence, and SES/S3/SNS event wiring
-belong to later milestones.
+The Lambda crates keep AWS handler glue thin. Reusable behavior belongs in
+`shared` and is covered by unit and PostgreSQL integration tests.
 
 ## Verification
 
 ```bash
 cargo fmt -- --check
-CARGO_TARGET_DIR=target-clippy cargo clippy --release -- -D warnings -W clippy::cognitive_complexity
+CARGO_TARGET_DIR=target-clippy cargo clippy --workspace --all-targets --release -- -D warnings -W clippy::cognitive_complexity
 CARGO_TARGET_DIR=target-cov cargo test --release --lib
+../scripts/run-backend-integration-tests.sh
 ```

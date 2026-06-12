@@ -9,5 +9,8 @@
 | ADRs | [adr/README.md](adr/README.md) |
 | Backlog | [backlog.md](backlog.md) |
 | Product spec | [../mail-foundation-spec.md](../mail-foundation-spec.md) |
-| Implementation plan | [../MAIL-FOUNDATION-PLAN.md](../MAIL-FOUNDATION-PLAN.md) |
 | Changelog | [../CHANGELOG.md](../CHANGELOG.md) |
+| Backend package | [../backend/README.md](../backend/README.md) |
+| Frontend package | [../frontend/README.md](../frontend/README.md) |
+| Terraform root | [../infrastructure/terraform/README.md](../infrastructure/terraform/README.md) |
+| Migration directory | [../db/migrations/README.md](../db/migrations/README.md) |

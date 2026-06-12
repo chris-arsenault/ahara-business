@@ -23,5 +23,3 @@ Planned-but-not-built work. Each item is a positive assertion of future-state be
 - Add booking workflows.
 - Add money tracking.
 - Add mentee-facing accounts with object-level authorization.
-
-## Product

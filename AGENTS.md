@@ -7,11 +7,12 @@ Ahara Business is the mail foundation for the business/mentoring systems.
 | Topic | Link |
 | ---- | ---- |
 | Workspace overview | [README.md](README.md) |
+| Documentation index | [docs/README.md](docs/README.md) |
 | Product spec | [mail-foundation-spec.md](mail-foundation-spec.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
-| Implementation plan | [MAIL-FOUNDATION-PLAN.md](MAIL-FOUNDATION-PLAN.md) |
 | Architecture decisions | [docs/adr/README.md](docs/adr/README.md) |
 | Backlog | [docs/backlog.md](docs/backlog.md) |
+| Changelog | [CHANGELOG.md](CHANGELOG.md) |
 | Platform integration | [../ahara/INTEGRATION.md](../ahara/INTEGRATION.md) |
 
 ## Critical rules
@@ -21,7 +22,7 @@ Ahara Business is the mail foundation for the business/mentoring systems.
 - Keep mail content rendering text-only. Ingest converts HTML to plaintext; UI surfaces stored plaintext and inert links.
 - Keep SES, S3, SNS, and Lambda IAM least-privilege and scoped to project-owned resources.
 - Add platform deployer primitives in `ahara-infra` before project Terraform depends on new AWS services.
-- Register only buildable Cargo/npm/Terraform members. Keep future homes README-only until code exists.
+- Register Cargo, npm, and Terraform members only after they build under CI.
 - Never start a local dev server unless the user explicitly asks.
 - Run `make ci` before handoff when files change.
 
@@ -30,13 +31,12 @@ Ahara Business is the mail foundation for the business/mentoring systems.
 | Path | Purpose |
 | ---- | ---- |
 | `mail-foundation-spec.md` | Product and security requirements for the mail foundation |
-| `MAIL-FOUNDATION-PLAN.md` | Milestone-level implementation plan |
-| `backend/` | Rust Lambda workspace with API, worker, and shared crates |
-| `frontend/` | Vite React/TypeScript SPA scaffold |
-| `db/migrations/` | Platform PostgreSQL migration directory; intentionally empty until M2 |
-| `infrastructure/terraform/` | Project Terraform root for the M0 app scaffold |
-| `scripts/` | Local automation, including parameterless deploy |
-| `docs/` | Architecture, ADRs, and backlog |
+| `backend/` | Rust Lambda workspace with API, receipt gate, ingest, send, feedback, and shared crates |
+| `frontend/` | Vite React/TypeScript SPA for mailbox, contacts, routing, and auth |
+| `db/migrations/` | Platform PostgreSQL schema, rollback, and seed files |
+| `infrastructure/terraform/` | Project Terraform root for frontend, API, mail, storage, feedback, and alarms |
+| `scripts/` | Local automation for deploy, integration tests, and CI guardrails |
+| `docs/` | Architecture, operations, deploy, smoke checks, ADRs, and backlog |
 
 ## Commands
 

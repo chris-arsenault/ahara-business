@@ -2,61 +2,78 @@
 
 ## Overview
 
-Ahara Business is the mail foundation project for the Ahara business systems.
-The current M0 architecture is a runnable platform scaffold: Rust Lambda
-binaries, a React/TypeScript SPA, a project Terraform root, shared CI, and
-platform registration. The product target remains the SES-backed text-only mail
-system described in `mail-foundation-spec.md` and `MAIL-FOUNDATION-PLAN.md`.
+Ahara Business runs Ahara Mail: a single-user authenticated mail application for
+the Ahara business systems. The app receives mail for `ahara.io` through SES,
+stores raw MIME in private S3, persists searchable text and metadata in shared
+PostgreSQL, sends outbound mail through SES, and exposes mailbox operations in a
+React SPA at `mail.ahara.io`.
 
-## Current Runtime Shape
+Durable design choices are recorded in [ADRs](adr/README.md). The product
+requirements live in [../mail-foundation-spec.md](../mail-foundation-spec.md).
+
+## Runtime Shape
 
 | Component | Runtime | Purpose |
 | ---- | ---- | ---- |
-| Frontend | Vite React + TypeScript SPA | Authenticated-app shell that reads platform runtime config |
-| API | Rust Lambda behind shared ALB | Minimal Axum/lambda_http router with unauthenticated `/health` |
-| Ingest worker | Rust Lambda | No-op event handler scaffold |
-| Send worker | Rust Lambda | No-op event handler scaffold |
-| Feedback handler | Rust Lambda | No-op event handler scaffold |
-| Database | Shared PostgreSQL registration | Platform migration target for future schema work |
-| Auth | Shared Cognito app client | Public authenticated web path through the platform |
-| Terraform | Project root | Website, Cognito app, ALB API, standalone Lambdas, outputs |
+| Frontend | Vite React + TypeScript on the platform website module | Authenticated mailbox, sent mail, contacts, routing, forwarding, and MFA flows |
+| API | Rust Lambda behind the shared ALB | Authenticated JSON API for mailbox, contacts, domains, forwarding, outbound mail, and `/health` |
+| Receipt gate | Rust Lambda invoked synchronously by SES | Stops unknown recipients and count floods before S3 storage |
+| Ingest worker | Rust Lambda invoked asynchronously by SES | Fetches raw MIME, applies limits/security policy, persists mailbox rows, and enqueues forwarding work |
+| Send worker | Rust Lambda invoked by EventBridge every minute | Claims outbound work, sends through SES, retries transient failures, and records final status |
+| Feedback handler | Rust Lambda subscribed to SES SNS topics | Applies bounce/complaint feedback to outbound status and suppressions |
+| Database | Shared PostgreSQL through the platform migration flow | Domains, addresses, contacts, messages, recipients, attachment refs, threads, forwarding rules, suppressions, and outbound work |
+| Raw mail storage | Private project S3 bucket | Raw MIME retention under the `raw/` prefix with public access blocked and lifecycle controls |
+| Auth | Shared Cognito app client | Public authenticated app access with TOTP setup and token validation |
+| Terraform | Project-owned root | Frontend, API, Lambdas, SES identity/rules, raw-mail storage, SNS feedback, alarms, and DNS records |
 
-## Platform Integration
+## Mail Flow
 
-The project follows the Ahara platform contracts from `../ahara/INTEGRATION.md`:
-shared state, shared ALB, shared Cognito, shared RDS migration registration, and
-Terraform module reuse from `ahara-tf-patterns`. M0 also registers the
-`ahara-business` deployer role and database in `ahara-infra`, including the SES
-and private-storage deployer primitives required by later mail infrastructure.
+Inbound mail enters through the active SES receipt rule set for `ahara.io`.
+SES invokes the receipt gate before storage. Accepted recipients are written to
+the raw-mail S3 bucket, then SES invokes ingest asynchronously with the S3
+pointer. Ingest fetches the object, rejects oversize objects before parsing,
+parses MIME, converts usable HTML fallbacks to plaintext, records recipients and
+attachment metadata, applies spam/virus disposition, updates threads, and
+creates normal mailbox rows only for accepted messages.
 
-The project Terraform currently owns the website, Cognito app client, API
-Lambda behind the shared ALB, and three standalone worker Lambdas. SES
-identities, receipt rules, raw-mail S3 storage, SNS topics, and mail event
-sources are planned for M3.
+Outbound compose, reply, and forwarding requests create `messages` and
+`outbound_work` rows. The send worker claims queued work in batches, checks
+suppressions before send, constructs text/plain MIME with threading headers,
+sends through SES, and records retry or final status. SES bounce and complaint
+notifications flow through SNS to the feedback handler, which updates message
+status and recipient suppressions.
 
-## Text-Only Rendering
+## Security Boundaries
 
-ADR-0002 sets the UI boundary: the public app surface is authenticated through
-Cognito, and mail content rendering stays text-only. The frontend scaffold does
-not render mail content yet. When ingest is implemented, HTML email is converted
-to readable plaintext, stripping markup, scripts, styles, and remote references,
-and the UI renders stored plaintext only.
+The frontend renders stored plaintext only. Sender-controlled HTML is stripped
+at ingest, links are inert in the mailbox UI, display names and attachment
+filenames are treated as untrusted display data, and quarantined or rejected
+mail is excluded from normal mailbox reads.
+
+The shared ALB validates Cognito tokens on authenticated API routes, and the API
+also verifies Cognito access tokens before serving app data. `/health` is the
+only unauthenticated API route. Mail logs and operational metrics omit message
+bodies, full headers, and raw email addresses.
+
+## Operational Controls
+
+Inbound flood controls are split across the pre-S3 receipt gate and post-S3
+ingest. The receipt gate limits accepted-recipient message counts, while ingest
+enforces raw object size, MIME size, nesting depth, attachment count, and recent
+raw-byte limits. Lambda reserved concurrency, CloudWatch alarms, SES reputation
+alarms, S3 lifecycle controls, and scoped IAM policies bound cost and blast
+radius.
 
 ## Code Boundaries
 
-Backend code lives in a Cargo workspace so API and worker glue can share tested
-library behavior. Frontend code lives in a Vite package and reads
-`window.__APP_CONFIG__` from the website runtime config. Database migrations live
-under `db/migrations/` and remain intentionally empty until M2 creates schema
-SQL. Terraform stays in `infrastructure/terraform/` and uses platform modules
-rather than hand-owned shared resources.
+Backend business logic lives in the `backend/shared` crate so parsing, policy,
+SQL, security disposition, forwarding, sending, and feedback behavior can be
+tested outside Lambda glue. Lambda crates own handler setup and AWS integration.
 
-## Target Mail Flow
+Frontend code reads `window.__APP_CONFIG__` from the deployed website runtime
+config, stores Cognito session state in the browser through the Cognito client,
+and uses the typed API client in `frontend/src/api.ts` for all app data.
 
-The later mail system receives through SES, stores raw MIME in private S3,
-persists searchable text records in shared PostgreSQL, sends outbound mail
-through SES, and processes bounce/complaint SNS feedback. Those flows are not
-implemented in M0; they are phased in by the implementation plan.
-
-Raw MIME remains private S3 data in the target architecture. Logs omit message
-bodies and full headers.
+Terraform remains under `infrastructure/terraform/` and owns project mail
+resources while reusing shared platform modules for website hosting, ALB API,
+Cognito app-client creation, Lambda deployment, VPC discovery, and state.
