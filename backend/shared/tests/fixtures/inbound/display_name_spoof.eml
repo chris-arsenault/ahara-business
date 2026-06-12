@@ -1,0 +1,8 @@
+From: "contact@ahara.io" <attacker@example.test>
+To: Contact <contact@ahara.io>
+Subject: Spoofed display
+Date: Wed, 10 Jun 2026 18:00:00 +0000
+Message-ID: <spoof@example.test>
+Content-Type: text/plain; charset=utf-8
+
+Display name is not identity.

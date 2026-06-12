@@ -1,0 +1,15 @@
+.env
+node_modules/
+dist/
+frontend/dist/
+frontend/coverage/
+backend/target/
+backend/target-clippy/
+backend/target-cov/
+target/
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+.idea/
+.DS_Store

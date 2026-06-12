@@ -1,0 +1,20 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  ci:
+    uses: chris-arsenault/ahara/.github/workflows/ci.yml@main
+    with:
+      rust_extra_ci_commands: |
+        ./scripts/run-backend-integration-tests.sh
+    secrets: inherit

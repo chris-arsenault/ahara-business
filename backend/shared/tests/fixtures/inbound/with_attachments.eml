@@ -1,0 +1,27 @@
+From: Sender <sender@example.test>
+To: Contact <contact@ahara.io>
+Subject: Attachments
+Date: Wed, 10 Jun 2026 18:00:00 +0000
+Message-ID: <attachments@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed-boundary"
+
+--mixed-boundary
+Content-Type: text/plain; charset=utf-8
+
+Attached metadata only.
+
+--mixed-boundary
+Content-Type: application/pdf; name="invoice.pdf"
+Content-Disposition: attachment; filename="invoice.pdf"
+Content-ID: <invoice-content>
+
+fake-pdf-body
+
+--mixed-boundary
+Content-Type: text/plain
+Content-Disposition: attachment; filename="notes.txt"
+
+attachment text
+
+--mixed-boundary--

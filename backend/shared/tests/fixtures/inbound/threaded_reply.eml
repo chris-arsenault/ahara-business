@@ -1,0 +1,11 @@
+From: Responder <sender@example.test>
+To: Contact <contact@ahara.io>, Chris <chris@ahara.io>
+Cc: Support <support@ahara.io>
+Subject: Re: Project thread
+Date: Wed, 10 Jun 2026 17:40:00 +0000
+Message-ID: <reply@example.test>
+In-Reply-To: <previous@example.test>
+References: <root@example.test> <previous@example.test>
+Content-Type: text/plain; charset=utf-8
+
+Reply body.

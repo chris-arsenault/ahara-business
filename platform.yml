@@ -1,0 +1,14 @@
+project: ahara-business
+prefix: ahara-business
+migrations: db/migrations
+stack:
+  - rust
+  - typescript
+  - terraform
+rust_artifacts:
+  lambdas:
+    - api
+    - receipt-gate
+    - ingest
+    - send-worker
+    - feedback-handler

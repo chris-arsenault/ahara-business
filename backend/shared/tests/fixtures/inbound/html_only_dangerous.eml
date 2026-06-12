@@ -1,0 +1,20 @@
+From: Sender <sender@example.test>
+To: Contact <contact@ahara.io>
+Subject: HTML only dangerous
+Date: Wed, 10 Jun 2026 18:00:00 +0000
+Message-ID: <html-dangerous@example.test>
+Content-Type: text/html; charset=utf-8
+
+<html>
+  <head>
+    <style>body { background-image: url("https://tracker.example/pixel"); }</style>
+    <script>alert("xss")</script>
+    <link rel="stylesheet" href="https://tracker.example/style.css">
+  </head>
+  <body onload="steal()">
+    <p>Visible body</p>
+    <img src="https://tracker.example/pixel.png" alt="tracking pixel">
+    <p><a href="javascript:alert(1)">Dangerous link</a></p>
+    <p><a href="data:text/html,hello">Data link</a></p>
+  </body>
+</html>

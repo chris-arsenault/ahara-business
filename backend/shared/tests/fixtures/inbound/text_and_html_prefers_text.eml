@@ -1,0 +1,19 @@
+From: Sender <sender@example.test>
+To: Contact <contact@ahara.io>
+Subject: Text and HTML
+Date: Wed, 10 Jun 2026 18:00:00 +0000
+Message-ID: <text-html@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt-boundary"
+
+--alt-boundary
+Content-Type: text/plain; charset=utf-8
+
+Preferred plain body.
+
+--alt-boundary
+Content-Type: text/html; charset=utf-8
+
+<p>HTML body should not win.</p>
+
+--alt-boundary--

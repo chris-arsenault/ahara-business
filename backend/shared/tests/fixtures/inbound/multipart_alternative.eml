@@ -1,0 +1,19 @@
+From: Sender <sender@example.test>
+To: Contact <contact@ahara.io>
+Subject: Multipart alternative
+Date: Wed, 10 Jun 2026 18:00:00 +0000
+Message-ID: <alternative@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt-boundary"
+
+--alt-boundary
+Content-Type: text/plain; charset=utf-8
+
+Plain alternative body.
+
+--alt-boundary
+Content-Type: text/html; charset=utf-8
+
+<p>HTML alternative body.</p>
+
+--alt-boundary--

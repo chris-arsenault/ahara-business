@@ -1,0 +1,17 @@
+From: Sender <sender@example.test>
+To: Contact <contact@ahara.io>
+Subject: HTML only safe
+Date: Wed, 10 Jun 2026 18:00:00 +0000
+Message-ID: <html-safe@example.test>
+Content-Type: text/html; charset=utf-8
+
+<html>
+  <body>
+    <p>Hello <strong>from HTML</strong>.</p>
+    <ul>
+      <li>First item</li>
+      <li>Second item</li>
+    </ul>
+    <p>Visit <a href="https://example.test/path">example</a>.</p>
+  </body>
+</html>

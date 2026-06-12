@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS outbound_work;
+DROP TABLE IF EXISTS suppressions;
+DROP TABLE IF EXISTS forwarding_rules;
+DROP TABLE IF EXISTS attachment_refs;
+DROP TABLE IF EXISTS recipients;
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS threads;
+DROP TABLE IF EXISTS contacts;
+DROP TABLE IF EXISTS addresses;
+DROP TABLE IF EXISTS domains;

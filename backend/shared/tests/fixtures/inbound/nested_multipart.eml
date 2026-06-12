@@ -1,0 +1,24 @@
+From: Sender <sender@example.test>
+To: Contact <contact@ahara.io>
+Subject: Nested multipart
+Date: Wed, 10 Jun 2026 18:00:00 +0000
+Message-ID: <nested@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed-boundary"
+
+--mixed-boundary
+Content-Type: multipart/alternative; boundary="alt-boundary"
+
+--alt-boundary
+Content-Type: text/plain; charset=utf-8
+
+Nested plain body.
+
+--alt-boundary
+Content-Type: text/html; charset=utf-8
+
+<p>Nested HTML body.</p>
+
+--alt-boundary--
+
+--mixed-boundary--
