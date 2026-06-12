@@ -131,6 +131,21 @@ impl RawMailStore for S3RawMailStore {
             })?;
         Ok(())
     }
+
+    async fn delete_raw_mail(&self, key: &str) -> AppResult<()> {
+        let key = self.validate_key(key)?;
+        self.client
+            .delete_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|err| AppError::ExternalService {
+                service: "s3",
+                message: err.to_string(),
+            })?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

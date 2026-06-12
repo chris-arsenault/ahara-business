@@ -1,9 +1,10 @@
-/* eslint-disable complexity, max-lines-per-function, react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
+/* eslint-disable max-lines-per-function, react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
 import { Plus, Power, PowerOff, ShieldCheck, Trash2 } from "lucide-react";
 import type {
   DomainConfig,
   DraftForwarding,
+  RetentionDrafts,
   RoutingAdminApi,
   RoutingState,
   UpdateDomainRequest,
@@ -17,6 +18,7 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
     Record<string, string>
   >({});
   const [draftForwarding, setDraftForwarding] = useState<DraftForwarding>({});
+  const [retentionDrafts, setRetentionDrafts] = useState<RetentionDrafts>({});
   const [actionError, setActionError] = useState<string>();
 
   async function loadDomains() {
@@ -39,6 +41,13 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
   useEffect(() => {
     void loadDomains();
   }, [apiClient]);
+
+  function updateRetentionDraft(key: string, value: string) {
+    setRetentionDrafts((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
 
   if (state.status === "loading") {
     return (
@@ -115,6 +124,32 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
               </select>
             </label>
 
+            <div className="retention-controls">
+              <label className="field-control">
+                <span>Raw retention days</span>
+                <input
+                  inputMode="numeric"
+                  value={
+                    retentionDrafts[domain.domain_name] ??
+                    String(domain.raw_retention_days ?? "")
+                  }
+                  onChange={(event) =>
+                    updateRetentionDraft(
+                      domain.domain_name,
+                      event.currentTarget.value,
+                    )
+                  }
+                />
+              </label>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => void updateDomainRetention(domain.domain_name)}
+              >
+                Save retention
+              </button>
+            </div>
+
             <form
               className="address-add-form"
               onSubmit={(event) => {
@@ -148,6 +183,42 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
               {domain.addresses.map((address) => (
                 <li key={address.local_part}>
                   <span>{address.local_part}</span>
+                  <label className="field-control compact-field">
+                    <span>Raw retention</span>
+                    <input
+                      aria-label={`Raw retention days for ${address.local_part}@${domain.domain_name}`}
+                      inputMode="numeric"
+                      value={
+                        retentionDrafts[
+                          addressRetentionKey(
+                            domain.domain_name,
+                            address.local_part,
+                          )
+                        ] ?? String(address.raw_retention_days ?? "")
+                      }
+                      onChange={(event) =>
+                        updateRetentionDraft(
+                          addressRetentionKey(
+                            domain.domain_name,
+                            address.local_part,
+                          ),
+                          event.currentTarget.value,
+                        )
+                      }
+                    />
+                  </label>
+                  <button
+                    className="secondary-button compact-button"
+                    type="button"
+                    onClick={() =>
+                      void updateAddressRetention(
+                        domain.domain_name,
+                        address.local_part,
+                      )
+                    }
+                  >
+                    Save
+                  </button>
                   <strong>{address.active ? "active" : "inactive"}</strong>
                   <button
                     className="icon-button"
@@ -181,23 +252,31 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
                 }}
               >
                 <label className="field-control">
+                  <span>Scope</span>
+                  <select
+                    value={forwardDraft(domain).scope}
+                    onChange={(event) =>
+                      updateForwardDraft(domain.domain_name, {
+                        scope: event.currentTarget.value as
+                          | "address"
+                          | "domain",
+                      })
+                    }
+                  >
+                    <option value="address">address</option>
+                    <option value="domain">domain</option>
+                  </select>
+                </label>
+                <label className="field-control">
                   <span>Source address</span>
                   <select
-                    value={
-                      draftForwarding[domain.domain_name]?.local_part ??
-                      domain.addresses[0]?.local_part ??
-                      ""
-                    }
+                    disabled={forwardDraft(domain).scope === "domain"}
+                    value={forwardDraft(domain).local_part}
                     onChange={(event) => {
                       const localPart = event.currentTarget.value;
-                      setDraftForwarding((current) => ({
-                        ...current,
-                        [domain.domain_name]: {
-                          local_part: localPart,
-                          target_address:
-                            current[domain.domain_name]?.target_address ?? "",
-                        },
-                      }));
+                      updateForwardDraft(domain.domain_name, {
+                        local_part: localPart,
+                      });
                     }}
                   >
                     {domain.addresses.map((address) => (
@@ -213,23 +292,47 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
                 <label className="field-control">
                   <span>Forward to</span>
                   <input
-                    value={
-                      draftForwarding[domain.domain_name]?.target_address ?? ""
-                    }
+                    value={forwardDraft(domain).target_address}
                     onChange={(event) => {
-                      const targetAddress = event.currentTarget.value;
-                      setDraftForwarding((current) => ({
-                        ...current,
-                        [domain.domain_name]: {
-                          local_part:
-                            current[domain.domain_name]?.local_part ??
-                            domain.addresses[0]?.local_part ??
-                            "",
-                          target_address: targetAddress,
-                        },
-                      }));
+                      updateForwardDraft(domain.domain_name, {
+                        target_address: event.currentTarget.value,
+                      });
                     }}
                   />
+                </label>
+                <label className="field-control">
+                  <span>Sender filter</span>
+                  <input
+                    value={forwardDraft(domain).sender_address}
+                    onChange={(event) =>
+                      updateForwardDraft(domain.domain_name, {
+                        sender_address: event.currentTarget.value,
+                      })
+                    }
+                  />
+                </label>
+                <label className="field-control">
+                  <span>Plus tag</span>
+                  <input
+                    value={forwardDraft(domain).plus_tag}
+                    onChange={(event) =>
+                      updateForwardDraft(domain.domain_name, {
+                        plus_tag: event.currentTarget.value,
+                      })
+                    }
+                  />
+                </label>
+                <label className="checkbox-control">
+                  <input
+                    checked={forwardDraft(domain).require_auth_pass}
+                    type="checkbox"
+                    onChange={(event) =>
+                      updateForwardDraft(domain.domain_name, {
+                        require_auth_pass: event.currentTarget.checked,
+                      })
+                    }
+                  />
+                  <span>Require auth pass</span>
                 </label>
                 <button className="secondary-button" type="submit">
                   <Plus aria-hidden="true" size={15} />
@@ -242,9 +345,15 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
                   .map((rule) => (
                     <li key={rule.id}>
                       <span>
-                        {rule.local_part}@{rule.domain_name}
+                        {rule.rule_kind === "domain"
+                          ? `*@${rule.domain_name}`
+                          : `${rule.local_part}@${rule.domain_name}`}
                       </span>
                       <strong>{rule.target_address}</strong>
+                      {rule.sender_address_normalized ? (
+                        <small>{rule.sender_address_normalized}</small>
+                      ) : null}
+                      {rule.plus_tag ? <small>+{rule.plus_tag}</small> : null}
                       <em>{rule.active ? "active" : "inactive"}</em>
                       <button
                         className="icon-button"
@@ -298,6 +407,36 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
     }
   }
 
+  async function updateDomainRetention(domainName: string) {
+    const parsed = parseRetentionDays(retentionDrafts[domainName] ?? "");
+    if (parsed.status === "invalid") {
+      setActionError(parsed.message);
+      return;
+    }
+    await updateDomain(domainName, { raw_retention_days: parsed.days });
+  }
+
+  async function updateAddressRetention(domainName: string, localPart: string) {
+    const parsed = parseRetentionDays(
+      retentionDrafts[addressRetentionKey(domainName, localPart)] ?? "",
+    );
+    if (parsed.status === "invalid") {
+      setActionError(parsed.message);
+      return;
+    }
+    setActionError(undefined);
+    try {
+      await apiClient.updateAddress(domainName, localPart, {
+        raw_retention_days: parsed.days,
+      });
+      await refreshDomain(domainName);
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Unable to update address",
+      );
+    }
+  }
+
   async function deactivateAddress(domainName: string, localPart: string) {
     setActionError(undefined);
     try {
@@ -311,23 +450,24 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
   }
 
   async function addForwardingRule(domain: DomainConfig) {
-    const draft = draftForwarding[domain.domain_name];
-    const localPart =
-      draft?.local_part || domain.addresses[0]?.local_part || "";
-    const targetAddress = draft?.target_address.trim() ?? "";
-    if (!localPart || !targetAddress) {
+    const draft = forwardDraft(domain);
+    const targetAddress = draft.target_address.trim();
+    if (!targetAddress || (draft.scope === "address" && !draft.local_part)) {
       return;
     }
     setActionError(undefined);
     try {
       await apiClient.upsertForwardingRule({
         domain_name: domain.domain_name,
-        local_part: localPart,
+        local_part: draft.scope === "address" ? draft.local_part : null,
         target_address: targetAddress,
+        sender_address: draft.sender_address.trim() || null,
+        plus_tag: draft.plus_tag.trim() || null,
+        require_auth_pass: draft.require_auth_pass,
       });
       setDraftForwarding((current) => ({
         ...current,
-        [domain.domain_name]: { local_part: localPart, target_address: "" },
+        [domain.domain_name]: { ...draft, target_address: "" },
       }));
       await refreshForwardingRules();
     } catch (error) {
@@ -380,6 +520,62 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
       current.status === "ready" ? { ...current, forwardingRules } : current,
     );
   }
+
+  function forwardDraft(domain: DomainConfig) {
+    return (
+      draftForwarding[domain.domain_name] ?? {
+        scope: "address" as const,
+        local_part: domain.addresses[0]?.local_part ?? "",
+        target_address: "",
+        sender_address: "",
+        plus_tag: "",
+        require_auth_pass: true,
+      }
+    );
+  }
+
+  function updateForwardDraft(
+    domainName: string,
+    patch: Partial<DraftForwarding[string]>,
+  ) {
+    setDraftForwarding((current) => {
+      const draft = current[domainName] ?? {
+        scope: "address",
+        local_part: "",
+        target_address: "",
+        sender_address: "",
+        plus_tag: "",
+        require_auth_pass: true,
+      };
+      return {
+        ...current,
+        [domainName]: {
+          ...draft,
+          ...patch,
+        },
+      };
+    });
+  }
+}
+
+function addressRetentionKey(domainName: string, localPart: string) {
+  return `${domainName}:${localPart}`;
+}
+
+function parseRetentionDays(
+  value: string,
+):
+  | { status: "valid"; days: number | null }
+  | { status: "invalid"; message: string } {
+  const rawValue = value.trim();
+  const days = rawValue ? Number(rawValue) : null;
+  if (rawValue && !Number.isInteger(days)) {
+    return {
+      status: "invalid",
+      message: "Raw retention days must be a whole number",
+    };
+  }
+  return { status: "valid", days };
 }
 
 function Header() {

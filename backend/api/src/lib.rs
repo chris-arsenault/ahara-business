@@ -6,6 +6,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::{Value, json};
+use shared::attachments::{AttachmentService, MailboxAttachmentDownload, PgAttachmentService};
 use shared::auth::{AuthVerifier, CognitoJwtVerifier, UserContext};
 use shared::config::AppConfig;
 use shared::contacts::{
@@ -14,7 +15,7 @@ use shared::contacts::{
 use shared::db::{DbPool, connect_pool};
 use shared::domain_config::{
     AcceptedAddress, CreateAddressRequest, DomainConfig, DomainConfigService,
-    PgDomainConfigService, UpdateDomainRequest,
+    PgDomainConfigService, UpdateAddressRequest, UpdateDomainRequest,
 };
 use shared::error::{AppError, AppResult};
 use shared::forwarding::{
@@ -30,6 +31,7 @@ use shared::outbound::{
     ComposeMessageRequest, OutboundMessageDetail, OutboundMessageQueued, OutboundMessageSummary,
     OutboundService, PgOutboundService, ReplyMessageRequest,
 };
+use shared::raw_mail_store::S3RawMailStore;
 use tower_http::cors::{Any, CorsLayer};
 
 #[derive(Clone)]
@@ -40,6 +42,7 @@ pub struct ApiState {
     pub domain_config: Arc<dyn DomainConfigService>,
     pub contacts: Arc<dyn ContactsService>,
     pub mailbox: Arc<dyn MailboxService>,
+    pub attachments: Arc<dyn AttachmentService>,
     pub outbound: Arc<dyn OutboundService>,
     pub forwarding: Arc<dyn ForwardingRuleService>,
 }
@@ -51,6 +54,12 @@ impl ApiState {
         let domain_config = Arc::new(PgDomainConfigService::new(db.clone()));
         let contacts = Arc::new(PgContactsService::new(db.clone()));
         let mailbox = Arc::new(PgMailboxService::new(db.clone()));
+        let raw_mail_store = Arc::new(S3RawMailStore::from_env(&config.mail).await);
+        let attachments = Arc::new(PgAttachmentService::new(
+            db.clone(),
+            raw_mail_store,
+            shared::inbound::limits::IngestLimits::default(),
+        ));
         let outbound = Arc::new(PgOutboundService::new(
             db.clone(),
             config.mail.domain.clone(),
@@ -63,6 +72,7 @@ impl ApiState {
             domain_config,
             contacts,
             mailbox,
+            attachments,
             outbound,
             forwarding,
         })
@@ -85,6 +95,10 @@ pub fn router(state: ApiState) -> Router {
         )
         .route("/mailbox/messages", get(list_mailbox_messages))
         .route("/mailbox/messages/{message_id}", get(get_mailbox_message))
+        .route(
+            "/mailbox/messages/{message_id}/attachments/{attachment_id}",
+            get(download_mailbox_attachment),
+        )
         .route(
             "/mailbox/messages/{message_id}/state",
             axum::routing::patch(update_mailbox_message_state),
@@ -119,7 +133,7 @@ pub fn router(state: ApiState) -> Router {
         )
         .route(
             "/domains/{domain_name}/addresses/{local_part}",
-            axum::routing::delete(deactivate_address),
+            axum::routing::patch(update_address).delete(deactivate_address),
         )
         .layer(cors_layer())
         .with_state(state)
@@ -199,6 +213,21 @@ async fn deactivate_address(
     ))
 }
 
+async fn update_address(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Path((domain_name, local_part)): Path<(String, String)>,
+    Json(request): Json<UpdateAddressRequest>,
+) -> Result<Json<AcceptedAddress>, ApiError> {
+    require_user(&state, &headers).await?;
+    Ok(Json(
+        state
+            .domain_config
+            .update_address(&domain_name, &local_part, request)
+            .await?,
+    ))
+}
+
 async fn list_contacts(
     State(state): State<ApiState>,
     headers: HeaderMap,
@@ -253,6 +282,20 @@ async fn get_mailbox_message(
 ) -> Result<Json<MailboxMessageDetail>, ApiError> {
     require_user(&state, &headers).await?;
     Ok(Json(state.mailbox.get_message(&message_id).await?))
+}
+
+async fn download_mailbox_attachment(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Path((message_id, attachment_id)): Path<(String, String)>,
+) -> Result<Json<MailboxAttachmentDownload>, ApiError> {
+    require_user(&state, &headers).await?;
+    Ok(Json(
+        state
+            .attachments
+            .download_attachment(&message_id, &attachment_id)
+            .await?,
+    ))
 }
 
 async fn get_mailbox_thread(
@@ -360,7 +403,7 @@ async fn upsert_forwarding_rule(
     Json(request): Json<UpsertForwardingRuleRequest>,
 ) -> Result<Json<ForwardingRuleConfig>, ApiError> {
     require_user(&state, &headers).await?;
-    Ok(Json(state.forwarding.upsert_address_rule(request).await?))
+    Ok(Json(state.forwarding.upsert_rule(request).await?))
 }
 
 async fn deactivate_forwarding_rule(
@@ -428,6 +471,7 @@ impl AuthVerifier for TestAuthVerifier {
 #[cfg(test)]
 impl ApiState {
     pub fn for_tests() -> Self {
+        use shared::attachments::InMemoryAttachmentService;
         use shared::config::{
             ApiConfig, CognitoConfig, DatabaseConfig, FeedbackConfig, MailConfig,
         };
@@ -478,14 +522,17 @@ impl ApiState {
             domain_name: "ahara.io".to_string(),
             routing_policy: RoutingPolicy::Allowlist,
             active: true,
+            raw_retention_days: Some(90),
             addresses: vec![
                 AcceptedAddress {
                     local_part: "chris".to_string(),
                     active: true,
+                    raw_retention_days: None,
                 },
                 AcceptedAddress {
                     local_part: "contact".to_string(),
                     active: false,
+                    raw_retention_days: Some(30),
                 },
             ],
         }]));
@@ -580,6 +627,18 @@ impl ApiState {
                 detail: rejected_message,
             },
         ]));
+        let attachments = Arc::new(InMemoryAttachmentService::with_downloads([
+            MailboxAttachmentDownload {
+                id: "00000000-0000-0000-0000-000000000301".to_string(),
+                message_id: "00000000-0000-0000-0000-000000000001".to_string(),
+                filename: "../invoice.pdf".to_string(),
+                display_filename: "invoice.pdf".to_string(),
+                content_type: "application/pdf".to_string(),
+                size_bytes: 12,
+                content_id: None,
+                content_base64: "cGRmLWNvbnRlbnQ=".to_string(),
+            },
+        ]));
         Self {
             config,
             db,
@@ -587,6 +646,7 @@ impl ApiState {
             domain_config,
             contacts,
             mailbox,
+            attachments,
             outbound,
             forwarding,
         }
@@ -685,7 +745,8 @@ mod tests {
             "/domains/ahara.io",
             Some(json!({
                 "routing_policy": "catchall",
-                "active": false
+                "active": false,
+                "raw_retention_days": 180
             })),
         )
         .await;
@@ -694,6 +755,26 @@ mod tests {
         let payload = response_json(response).await;
         assert_eq!(payload["routing_policy"], "catchall");
         assert_eq!(payload["active"], false);
+        assert_eq!(payload["raw_retention_days"], 180);
+    }
+
+    #[tokio::test]
+    async fn domains_route_updates_address_retention_override() {
+        let response = authenticated_request(
+            "PATCH",
+            "/domains/ahara.io/addresses/contact",
+            Some(json!({
+                "active": true,
+                "raw_retention_days": null
+            })),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload = response_json(response).await;
+        assert_eq!(payload["local_part"], "contact");
+        assert_eq!(payload["active"], true);
+        assert!(payload["raw_retention_days"].is_null());
     }
 
     #[tokio::test]
@@ -701,7 +782,7 @@ mod tests {
         let added = authenticated_request(
             "POST",
             "/domains/ahara.io/addresses",
-            Some(json!({ "local_part": "Support" })),
+            Some(json!({ "local_part": "Support", "raw_retention_days": 14 })),
         )
         .await;
         let reactivated = authenticated_request(
@@ -924,6 +1005,23 @@ mod tests {
         assert_eq!(payload["auth_verdict"], "pass");
         assert_eq!(payload["security_disposition"], "accepted");
         assert_eq!(payload["attachments"][0]["display_filename"], "invoice.pdf");
+    }
+
+    #[tokio::test]
+    async fn mailbox_attachment_route_returns_private_download_payload() {
+        let response = authenticated_request(
+            "GET",
+            "/mailbox/messages/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000301",
+            None,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload = response_json(response).await;
+        assert_eq!(payload["display_filename"], "invoice.pdf");
+        assert_eq!(payload["content_type"], "application/pdf");
+        assert_eq!(payload["content_base64"], "cGRmLWNvbnRlbnQ=");
+        assert!(payload.get("url").is_none());
     }
 
     #[tokio::test]

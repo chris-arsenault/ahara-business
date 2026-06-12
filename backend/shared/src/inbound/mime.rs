@@ -5,7 +5,8 @@ use mailparse::{
 use crate::inbound::limits::IngestLimits;
 use crate::inbound::text::select_body_text;
 use crate::inbound::types::{
-    InboundAttachment, InboundMailbox, InboundRecipient, InboundRecipientKind, ParsedInboundMessage,
+    InboundAttachment, InboundAttachmentBody, InboundMailbox, InboundRecipient,
+    InboundRecipientKind, ParsedInboundMessage,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -59,6 +60,31 @@ pub fn parse_raw_mime(
     })
 }
 
+pub fn extract_attachment_body(
+    bytes: &[u8],
+    position: i32,
+    limits: IngestLimits,
+) -> Result<Option<InboundAttachmentBody>, InboundParseError> {
+    if bytes.len() > limits.max_raw_mime_bytes {
+        return Err(InboundParseError::LimitExceeded {
+            limit: "raw_mime_bytes",
+        });
+    }
+    if position < 0 {
+        return Ok(None);
+    }
+
+    let parsed =
+        mailparse::parse_mail(bytes).map_err(|err| InboundParseError::Mime(err.to_string()))?;
+    let mut state = AttachmentExtractState {
+        target_position: position,
+        next_position: 0,
+        attachment: None,
+    };
+    walk_part_for_attachment(&parsed, 0, limits, &mut state)?;
+    Ok(state.attachment)
+}
+
 fn walk_part(
     part: &ParsedMail<'_>,
     depth: usize,
@@ -107,6 +133,57 @@ fn walk_part(
         }
     }
 
+    Ok(())
+}
+
+#[derive(Debug)]
+struct AttachmentExtractState {
+    target_position: i32,
+    next_position: i32,
+    attachment: Option<InboundAttachmentBody>,
+}
+
+fn walk_part_for_attachment(
+    part: &ParsedMail<'_>,
+    depth: usize,
+    limits: IngestLimits,
+    state: &mut AttachmentExtractState,
+) -> Result<(), InboundParseError> {
+    if depth > limits.max_mime_depth {
+        return Err(InboundParseError::LimitExceeded {
+            limit: "mime_depth",
+        });
+    }
+    if state.attachment.is_some() {
+        return Ok(());
+    }
+    if !part.subparts.is_empty() {
+        for subpart in &part.subparts {
+            walk_part_for_attachment(subpart, depth + 1, limits, state)?;
+        }
+        return Ok(());
+    }
+    if !is_attachment(part) {
+        return Ok(());
+    }
+
+    let position = state.next_position;
+    state.next_position += 1;
+    if position != state.target_position {
+        return Ok(());
+    }
+
+    let body = part
+        .get_body_raw()
+        .map_err(|err| InboundParseError::Mime(err.to_string()))?;
+    state.attachment = Some(InboundAttachmentBody {
+        position,
+        filename: attachment_filename(part).unwrap_or_default(),
+        content_type: part.ctype.mimetype.clone(),
+        size_bytes: Some(body.len() as i64),
+        content_id: part.headers.get_first_value("Content-ID"),
+        bytes: body,
+    });
     Ok(())
 }
 
@@ -198,7 +275,7 @@ fn parse_references(value: Option<String>) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{InboundParseError, parse_raw_mime};
+    use super::{InboundParseError, extract_attachment_body, parse_raw_mime};
     use crate::inbound::limits::IngestLimits;
     use crate::inbound::types::{InboundRecipientKind, ParsedInboundMessage};
 
@@ -420,5 +497,18 @@ mod tests {
             Some("<invoice-content>")
         );
         assert_eq!(message.attachments[0].size_bytes, Some(14));
+    }
+
+    #[test]
+    fn inbound_mime_extracts_attachment_body_by_position() {
+        let attachment =
+            extract_attachment_body(bytes("with_attachments.eml"), 1, IngestLimits::default())
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(attachment.position, 1);
+        assert_eq!(attachment.filename, "notes.txt");
+        assert_eq!(attachment.content_type, "text/plain");
+        assert_eq!(attachment.bytes, b"attachment text\n");
     }
 }

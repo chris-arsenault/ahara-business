@@ -637,6 +637,27 @@ button {
   grid-column: 1 / 3;
 }
 
+.compose-attachment-list {
+  grid-column: 1 / 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.compose-attachment-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 240px;
+  padding: 5px 8px;
+  border: 1px solid var(--rule);
+  font-size: 0.75rem;
+}
+
 .compose-status {
   align-self: center;
   color: var(--stamp-pass);
@@ -1104,6 +1125,14 @@ button {
   gap: 10px;
 }
 
+.retention-controls {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) auto;
+  align-items: end;
+  justify-content: start;
+  gap: 10px;
+}
+
 .address-list {
   display: grid;
   gap: 6px;
@@ -1115,7 +1144,7 @@ button {
 .address-list li {
   min-height: 38px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 38px;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 150px) auto auto 38px;
   align-items: center;
   gap: 8px;
   border: 1px solid var(--rule);
@@ -1124,7 +1153,7 @@ button {
   background: var(--paper);
 }
 
-.address-list span {
+.address-list > li > span {
   min-width: 0;
   overflow: hidden;
   font-family: var(--font-mono);
@@ -1133,12 +1162,30 @@ button {
   white-space: nowrap;
 }
 
-.address-list strong {
+.address-list > li > strong {
   color: var(--stamp-pass);
   font-family: var(--font-mono);
   font-size: 0.6875rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.compact-field {
+  gap: 3px;
+}
+
+.compact-field span {
+  font-size: 0.625rem;
+}
+
+.compact-field input {
+  min-height: 28px;
+  padding: 4px 7px;
+}
+
+.compact-button {
+  min-height: 30px;
+  padding: 5px 8px;
 }
 
 .forwarding-rules {
@@ -1156,10 +1203,23 @@ button {
 
 .forwarding-add-form {
   display: grid;
-  grid-template-columns: minmax(150px, 220px) minmax(180px, 320px) auto;
+  grid-template-columns: repeat(3, minmax(150px, 220px)) auto;
   align-items: end;
   justify-content: start;
   gap: 10px;
+}
+
+.checkbox-control {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+}
+
+.checkbox-control input {
+  width: auto;
 }
 
 .forwarding-rule-list {

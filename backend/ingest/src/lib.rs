@@ -289,6 +289,11 @@ mod tests {
             self.insert(&object.key, &object.bytes);
             Ok(())
         }
+
+        async fn delete_raw_mail(&self, key: &str) -> AppResult<()> {
+            self.objects.lock().unwrap().remove(key);
+            Ok(())
+        }
     }
 
     #[derive(Debug, Clone, Default)]

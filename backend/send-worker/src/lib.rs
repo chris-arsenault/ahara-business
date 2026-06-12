@@ -8,6 +8,10 @@ use shared::error::AppResult;
 use shared::observability::mail_metric_payload;
 use shared::observability::{CountMetric, emit_mail_metric};
 use shared::outbound::{OutboundSendWorker, PgOutboundService};
+use shared::raw_mail_store::S3RawMailStore;
+use shared::retention::{
+    PgRawMailRetentionService, RawMailRetentionService, RawMailRetentionSummary,
+};
 use shared::ses_mail_sender::SesMailSender;
 
 pub async fn handle_event(
@@ -16,10 +20,15 @@ pub async fn handle_event(
     config: &AppConfig,
 ) -> AppResult<Value> {
     let pool = connect_pool(config).await?;
-    let outbound = Arc::new(PgOutboundService::new(pool, config.mail.domain.clone()));
+    let outbound = Arc::new(PgOutboundService::new(
+        pool.clone(),
+        config.mail.domain.clone(),
+    ));
     let mail_sender = Arc::new(SesMailSender::from_env().await);
     let worker = OutboundSendWorker::new(outbound, mail_sender, request_id);
-    handle_event_with_worker(payload, request_id, config, &worker).await
+    let raw_mail_store = Arc::new(S3RawMailStore::from_env(&config.mail).await);
+    let retention = PgRawMailRetentionService::new(pool, raw_mail_store);
+    handle_event_with_worker_and_retention(payload, request_id, config, &worker, &retention).await
 }
 
 pub async fn handle_event_with_worker(
@@ -28,9 +37,29 @@ pub async fn handle_event_with_worker(
     config: &AppConfig,
     worker: &OutboundSendWorker,
 ) -> AppResult<Value> {
+    handle_event_with_worker_and_retention(
+        _payload,
+        request_id,
+        config,
+        worker,
+        &NoopRawMailRetentionService,
+    )
+    .await
+}
+
+pub async fn handle_event_with_worker_and_retention(
+    _payload: Value,
+    request_id: &str,
+    config: &AppConfig,
+    worker: &OutboundSendWorker,
+    retention: &dyn RawMailRetentionService,
+) -> AppResult<Value> {
     let summary = worker.run_once().await?;
+    let retention_summary = retention.cleanup_due_raw_mail().await?;
     let metrics = send_worker_operational_metrics(&summary)?;
     emit_mail_metric("send-worker", &config.mail.domain, &metrics)?;
+    let retention_metrics = retention_operational_metrics(&retention_summary)?;
+    emit_mail_metric("retention-cleanup", &config.mail.domain, &retention_metrics)?;
     tracing::info!(
         request_id = %request_id,
         service = shared::service_name(),
@@ -40,12 +69,16 @@ pub async fn handle_event_with_worker(
         retried = summary.retried,
         failed = summary.failed,
         suppressed = summary.suppressed,
+        raw_retention_candidates = retention_summary.candidates,
+        raw_retention_deleted = retention_summary.deleted,
+        raw_retention_failed = retention_summary.failed,
         "send worker completed"
     );
     Ok(json!({
         "status": "ok",
         "handler": "send-worker",
         "summary": summary,
+        "retention": retention_summary,
     }))
 }
 
@@ -59,6 +92,23 @@ fn send_worker_operational_metrics(
         CountMetric::new("OutboundFailed", summary.failed as u64)?,
         CountMetric::new("OutboundSuppressed", summary.suppressed as u64)?,
     ])
+}
+
+fn retention_operational_metrics(summary: &RawMailRetentionSummary) -> AppResult<Vec<CountMetric>> {
+    Ok(vec![
+        CountMetric::new("RawMailRetentionCandidates", summary.candidates as u64)?,
+        CountMetric::new("RawMailRetentionDeleted", summary.deleted as u64)?,
+        CountMetric::new("RawMailRetentionFailed", summary.failed as u64)?,
+    ])
+}
+
+struct NoopRawMailRetentionService;
+
+#[async_trait::async_trait]
+impl RawMailRetentionService for NoopRawMailRetentionService {
+    async fn cleanup_due_raw_mail(&self) -> AppResult<RawMailRetentionSummary> {
+        Ok(RawMailRetentionSummary::default())
+    }
 }
 
 #[cfg(test)]
@@ -133,6 +183,7 @@ mod tests {
                 bcc: Vec::new(),
                 subject: "Send".to_string(),
                 body_text: "body".to_string(),
+                attachments: Vec::new(),
             })
             .await
             .unwrap();
@@ -166,6 +217,7 @@ mod tests {
                 bcc: Vec::new(),
                 subject: "Sensitive outbound subject".to_string(),
                 body_text: "Sensitive outbound body".to_string(),
+                attachments: Vec::new(),
             })
             .await
             .unwrap();

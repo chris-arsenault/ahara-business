@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
@@ -20,6 +21,8 @@ pub const ENQUEUE_LIMIT_PER_FROM_PER_HOUR: i64 = 60;
 pub const WORKER_BATCH_LIMIT: i64 = 25;
 pub const MAX_SEND_ATTEMPTS: i32 = 5;
 pub const RETRY_BACKOFF_MINUTES: [i64; 4] = [5, 30, 120, 480];
+pub const MAX_OUTBOUND_ATTACHMENT_COUNT: usize = 10;
+pub const MAX_OUTBOUND_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ComposeMessageRequest {
@@ -31,6 +34,8 @@ pub struct ComposeMessageRequest {
     pub bcc: Vec<String>,
     pub subject: String,
     pub body_text: String,
+    #[serde(default)]
+    pub attachments: Vec<OutboundAttachmentInput>,
 }
 
 impl ComposeMessageRequest {
@@ -40,6 +45,7 @@ impl ComposeMessageRequest {
             recipients: normalize_outbound_recipients(&self.to, &self.cc, &self.bcc)?,
             subject: normalize_header_text("subject", &self.subject)?,
             body_text: self.body_text.clone(),
+            attachments: validate_outbound_attachments(&self.attachments)?,
         })
     }
 }
@@ -54,6 +60,8 @@ pub struct ReplyMessageRequest {
     #[serde(default)]
     pub bcc: Vec<String>,
     pub body_text: String,
+    #[serde(default)]
+    pub attachments: Vec<OutboundAttachmentInput>,
 }
 
 impl ReplyMessageRequest {
@@ -63,6 +71,7 @@ impl ReplyMessageRequest {
             recipients: normalize_outbound_recipients(&self.to, &self.cc, &self.bcc)?,
             subject: String::new(),
             body_text: self.body_text.clone(),
+            attachments: validate_outbound_attachments(&self.attachments)?,
         })
     }
 }
@@ -100,8 +109,16 @@ impl ForwardMessageRequest {
             recipients: normalize_outbound_recipients(&self.to, &self.cc, &self.bcc)?,
             subject: String::new(),
             body_text: self.note_text.clone(),
+            attachments: Vec::new(),
         })
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutboundAttachmentInput {
+    pub filename: String,
+    pub content_type: String,
+    pub content_base64: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,6 +136,7 @@ pub struct ValidatedOutboundMessage {
     pub recipients: Vec<OutboundRecipient>,
     pub subject: String,
     pub body_text: String,
+    pub attachments: Vec<OutboundAttachment>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,6 +152,23 @@ pub struct OutboundRecipient {
     pub address_normalized: String,
     pub display_name: String,
     pub position: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutboundAttachment {
+    pub position: i32,
+    pub filename: String,
+    pub display_filename: String,
+    pub content_type: String,
+    pub size_bytes: i64,
+    pub content_base64: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboundMimeAttachment {
+    pub filename: String,
+    pub content_type: String,
+    pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -212,6 +247,7 @@ pub struct OutboundMimeMessage {
     pub in_reply_to: Option<String>,
     pub references: Vec<String>,
     pub reply_to: Option<String>,
+    pub attachments: Vec<OutboundMimeAttachment>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -235,6 +271,7 @@ pub struct OutboundMessageDetail {
     pub subject: String,
     pub body_text: String,
     pub recipients: Vec<OutboundRecipient>,
+    pub attachments: Vec<OutboundAttachment>,
     pub last_error: Option<String>,
     pub sent_at: Option<String>,
     pub created_at: String,
@@ -458,6 +495,7 @@ impl OutboundService for PgOutboundService {
             recipients: validated.recipients,
             subject: validated.subject,
             body_text: validated.body_text,
+            attachments: validated.attachments,
             in_reply_to: None,
             reference_ids: Vec::new(),
             idempotency_key: format!("compose:{}", Uuid::new_v4()),
@@ -486,6 +524,7 @@ impl OutboundService for PgOutboundService {
             recipients: validated.recipients,
             subject: validated.subject,
             body_text: validated.body_text,
+            attachments: validated.attachments,
             in_reply_to: source.rfc_message_id,
             reference_ids,
             idempotency_key: format!("reply:{source_message_id}:{}", Uuid::new_v4()),
@@ -529,6 +568,7 @@ impl OutboundService for PgOutboundService {
             recipients,
             subject,
             body_text,
+            attachments: Vec::new(),
             in_reply_to: request.source_rfc_message_id,
             reference_ids,
             idempotency_key: format!(
@@ -825,7 +865,13 @@ impl PgOutboundService {
         }
         reject_suppressed_recipients(&self.pool, &request.recipients).await?;
         enforce_rate_limit(&self.pool, &request.from.address_normalized).await?;
+        self.insert_new_outbound_message(request).await
+    }
 
+    async fn insert_new_outbound_message(
+        &self,
+        request: EnqueueOutboundMessage,
+    ) -> AppResult<OutboundMessageQueued> {
         let rfc_message_id = build_message_id(&self.configured_domain)?;
         let mut tx = self
             .pool
@@ -837,6 +883,7 @@ impl PgOutboundService {
         let message_id =
             insert_outbound_message(&mut tx, thread_id, &rfc_message_id, &request).await?;
         insert_outbound_recipients(&mut tx, message_id, &request.recipients).await?;
+        insert_outbound_attachments(&mut tx, message_id, &request.attachments).await?;
         let work_id = insert_outbound_work(&mut tx, message_id, &request).await?;
 
         tx.commit()
@@ -951,7 +998,8 @@ impl PgOutboundService {
             return Ok(None);
         };
         let recipients = fetch_outbound_recipients(&self.pool, row.id).await?;
-        row.into_detail(recipients).map(Some)
+        let attachments = fetch_outbound_attachments(&self.pool, row.id).await?;
+        row.into_detail(recipients, attachments).map(Some)
     }
 
     async fn fetch_outbound_message_by_idempotency(
@@ -988,6 +1036,7 @@ struct EnqueueOutboundMessage {
     recipients: Vec<OutboundRecipient>,
     subject: String,
     body_text: String,
+    attachments: Vec<OutboundAttachment>,
     in_reply_to: Option<String>,
     reference_ids: Vec<String>,
     idempotency_key: String,
@@ -1039,6 +1088,7 @@ impl OutboundService for InMemoryOutboundService {
             recipients: validated.recipients,
             subject: validated.subject,
             body_text: validated.body_text,
+            attachments: validated.attachments,
             in_reply_to: None,
             reference_ids: Vec::new(),
             idempotency_key: format!("compose:{}", Uuid::new_v4()),
@@ -1071,6 +1121,7 @@ impl OutboundService for InMemoryOutboundService {
             recipients: validated.recipients,
             subject: validated.subject,
             body_text: validated.body_text,
+            attachments: validated.attachments,
             in_reply_to: source.rfc_message_id.clone(),
             reference_ids: build_reply_references(
                 source.rfc_message_id.as_deref(),
@@ -1115,6 +1166,7 @@ impl OutboundService for InMemoryOutboundService {
             recipients,
             subject,
             body_text,
+            attachments: Vec::new(),
             in_reply_to: request.source_rfc_message_id,
             reference_ids,
             idempotency_key: format!(
@@ -1350,6 +1402,7 @@ impl InMemoryOutboundService {
             subject: request.subject,
             body_text: request.body_text,
             recipients: request.recipients,
+            attachments: request.attachments,
             last_error: None,
             ses_message_id: None,
             send_attempt_count: 0,
@@ -1413,6 +1466,7 @@ struct InMemoryOutboundRecord {
     subject: String,
     body_text: String,
     recipients: Vec<OutboundRecipient>,
+    attachments: Vec<OutboundAttachment>,
     last_error: Option<String>,
     ses_message_id: Option<String>,
     send_attempt_count: i32,
@@ -1422,6 +1476,14 @@ struct InMemoryOutboundRecord {
 }
 
 impl InMemoryOutboundRecord {
+    fn mime_attachments(&self) -> AppResult<Vec<OutboundMimeAttachment>> {
+        self.attachments
+            .clone()
+            .into_iter()
+            .map(OutboundAttachment::into_mime_attachment)
+            .collect()
+    }
+
     fn into_summary(self) -> OutboundMessageSummary {
         let primary_recipient = self
             .recipients
@@ -1464,6 +1526,7 @@ impl InMemoryOutboundRecord {
             subject: self.subject,
             body_text: self.body_text,
             recipients: self.recipients,
+            attachments: self.attachments,
             last_error: self.last_error,
             sent_at: self.sent_at,
             created_at: self.created_at,
@@ -1657,7 +1720,7 @@ async fn insert_outbound_message(
          VALUES (
              'outbound', $1, $2, $3, $4,
              $5, $6, $7, $8, now(),
-             'accepted', 'queued', false, 0
+             'accepted', 'queued', $9, $10
          )
          RETURNING id",
     )
@@ -1669,6 +1732,8 @@ async fn insert_outbound_message(
     .bind(&request.from.address_normalized)
     .bind(&request.subject)
     .bind(&request.body_text)
+    .bind(!request.attachments.is_empty())
+    .bind(request.attachments.len() as i32)
     .fetch_one(&mut **tx)
     .await
     .map_err(|err| AppError::Database(err.to_string()))?;
@@ -1693,6 +1758,41 @@ async fn insert_outbound_recipients(
         .bind(&recipient.address_normalized)
         .bind(&recipient.display_name)
         .bind(recipient.position)
+        .execute(&mut **tx)
+        .await
+        .map_err(|err| AppError::Database(err.to_string()))?;
+    }
+    Ok(())
+}
+
+async fn insert_outbound_attachments(
+    tx: &mut Transaction<'_, Postgres>,
+    message_id: Uuid,
+    attachments: &[OutboundAttachment],
+) -> AppResult<()> {
+    for attachment in attachments {
+        let row: MessageIdRow = sqlx::query_as(
+            "INSERT INTO attachment_refs (
+                 message_id, position, filename, content_type, size_bytes
+             )
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING id",
+        )
+        .bind(message_id)
+        .bind(attachment.position)
+        .bind(&attachment.filename)
+        .bind(&attachment.content_type)
+        .bind(attachment.size_bytes)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|err| AppError::Database(err.to_string()))?;
+
+        sqlx::query(
+            "INSERT INTO outbound_attachment_payloads (attachment_id, content_base64)
+             VALUES ($1, $2)",
+        )
+        .bind(row.id)
+        .bind(&attachment.content_base64)
         .execute(&mut **tx)
         .await
         .map_err(|err| AppError::Database(err.to_string()))?;
@@ -1739,6 +1839,7 @@ async fn fetch_claimed_work_item(
     .await
     .map_err(|err| AppError::Database(err.to_string()))?;
     let recipients = fetch_outbound_recipients_tx(tx, row.message_id).await?;
+    let attachments = fetch_outbound_mime_attachments_tx(tx, row.message_id).await?;
     let reply_to = match row.source_message_id {
         Some(source_message_id) => fetch_source_reply_to(tx, source_message_id).await?,
         None => None,
@@ -1772,6 +1873,7 @@ async fn fetch_claimed_work_item(
         in_reply_to: message.in_reply_to,
         references: message.reference_ids,
         reply_to,
+        attachments,
     })?;
 
     Ok(ClaimedOutboundWork {
@@ -1836,6 +1938,63 @@ async fn fetch_outbound_recipients_tx(
     rows.into_iter().map(TryInto::try_into).collect()
 }
 
+async fn fetch_outbound_attachments(
+    pool: &DbPool,
+    message_id: Uuid,
+) -> AppResult<Vec<OutboundAttachment>> {
+    let rows: Vec<OutboundAttachmentRow> = sqlx::query_as(
+        "SELECT attachment_refs.position,
+                attachment_refs.filename,
+                attachment_refs.content_type,
+                attachment_refs.size_bytes,
+                outbound_attachment_payloads.content_base64
+         FROM attachment_refs
+         JOIN outbound_attachment_payloads
+           ON outbound_attachment_payloads.attachment_id = attachment_refs.id
+         WHERE attachment_refs.message_id = $1
+         ORDER BY attachment_refs.position ASC, attachment_refs.id ASC",
+    )
+    .bind(message_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|err| AppError::Database(err.to_string()))?;
+    rows.into_iter().map(TryInto::try_into).collect()
+}
+
+async fn fetch_outbound_mime_attachments_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    message_id: Uuid,
+) -> AppResult<Vec<OutboundMimeAttachment>> {
+    fetch_outbound_attachments_tx(tx, message_id)
+        .await?
+        .into_iter()
+        .map(|attachment| attachment.into_mime_attachment())
+        .collect()
+}
+
+async fn fetch_outbound_attachments_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    message_id: Uuid,
+) -> AppResult<Vec<OutboundAttachment>> {
+    let rows: Vec<OutboundAttachmentRow> = sqlx::query_as(
+        "SELECT attachment_refs.position,
+                attachment_refs.filename,
+                attachment_refs.content_type,
+                attachment_refs.size_bytes,
+                outbound_attachment_payloads.content_base64
+         FROM attachment_refs
+         JOIN outbound_attachment_payloads
+           ON outbound_attachment_payloads.attachment_id = attachment_refs.id
+         WHERE attachment_refs.message_id = $1
+         ORDER BY attachment_refs.position ASC, attachment_refs.id ASC",
+    )
+    .bind(message_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|err| AppError::Database(err.to_string()))?;
+    rows.into_iter().map(TryInto::try_into).collect()
+}
+
 fn claimed_memory_work(
     work: &InMemoryOutboundWork,
     message: &InMemoryOutboundRecord,
@@ -1870,6 +2029,7 @@ fn claimed_memory_work(
         in_reply_to: message.in_reply_to.clone(),
         references: message.reference_ids.clone(),
         reply_to: message.reply_to.clone(),
+        attachments: message.mime_attachments()?,
     })?;
 
     Ok(ClaimedOutboundWork {
@@ -2031,7 +2191,11 @@ impl TryFrom<OutboundMessageSummaryRow> for OutboundMessageSummary {
 }
 
 impl OutboundMessageRow {
-    fn into_detail(self, recipients: Vec<OutboundRecipient>) -> AppResult<OutboundMessageDetail> {
+    fn into_detail(
+        self,
+        recipients: Vec<OutboundRecipient>,
+        attachments: Vec<OutboundAttachment>,
+    ) -> AppResult<OutboundMessageDetail> {
         Ok(OutboundMessageDetail {
             id: self.id.to_string(),
             source_message_id: self.source_message_id.map(|id| id.to_string()),
@@ -2049,6 +2213,7 @@ impl OutboundMessageRow {
             subject: self.subject,
             body_text: self.body_text,
             recipients,
+            attachments,
             last_error: self.last_error,
             sent_at: self.sent_at,
             created_at: self.created_at,
@@ -2080,6 +2245,15 @@ struct OutboundRecipientRow {
     position: i32,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct OutboundAttachmentRow {
+    position: i32,
+    filename: String,
+    content_type: String,
+    size_bytes: Option<i64>,
+    content_base64: String,
+}
+
 impl TryFrom<OutboundRecipientRow> for OutboundRecipient {
     type Error = AppError;
 
@@ -2092,6 +2266,36 @@ impl TryFrom<OutboundRecipientRow> for OutboundRecipient {
             address_normalized: row.address_normalized,
             display_name: row.display_name,
             position: row.position,
+        })
+    }
+}
+
+impl TryFrom<OutboundAttachmentRow> for OutboundAttachment {
+    type Error = AppError;
+
+    fn try_from(row: OutboundAttachmentRow) -> Result<Self, Self::Error> {
+        Ok(Self {
+            position: row.position,
+            display_filename: crate::mailbox::sanitize_attachment_filename(&row.filename),
+            filename: row.filename,
+            content_type: row.content_type,
+            size_bytes: row.size_bytes.unwrap_or_default(),
+            content_base64: row.content_base64,
+        })
+    }
+}
+
+impl OutboundAttachment {
+    fn into_mime_attachment(self) -> AppResult<OutboundMimeAttachment> {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&self.content_base64)
+            .map_err(|_| {
+                AppError::Validation("attachment content is not valid base64".to_string())
+            })?;
+        Ok(OutboundMimeAttachment {
+            filename: self.filename,
+            content_type: self.content_type,
+            bytes,
         })
     }
 }
@@ -2137,6 +2341,48 @@ pub fn normalize_outbound_recipients(
     }
 
     Ok(recipients)
+}
+
+pub fn validate_outbound_attachments(
+    attachments: &[OutboundAttachmentInput],
+) -> AppResult<Vec<OutboundAttachment>> {
+    if attachments.len() > MAX_OUTBOUND_ATTACHMENT_COUNT {
+        return Err(AppError::Validation(format!(
+            "at most {MAX_OUTBOUND_ATTACHMENT_COUNT} attachments are allowed"
+        )));
+    }
+
+    let mut total_size = 0usize;
+    let mut validated = Vec::with_capacity(attachments.len());
+    for (position, attachment) in attachments.iter().enumerate() {
+        let filename = normalize_attachment_filename(&attachment.filename)?;
+        let content_type = normalize_content_type(&attachment.content_type)?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&attachment.content_base64)
+            .map_err(|_| {
+                AppError::Validation("attachment content is not valid base64".to_string())
+            })?;
+        if bytes.is_empty() {
+            return Err(AppError::Validation(
+                "attachment content is required".to_string(),
+            ));
+        }
+        total_size = total_size.saturating_add(bytes.len());
+        if total_size > MAX_OUTBOUND_ATTACHMENT_BYTES {
+            return Err(AppError::Validation(format!(
+                "attachments cannot exceed {MAX_OUTBOUND_ATTACHMENT_BYTES} bytes"
+            )));
+        }
+        validated.push(OutboundAttachment {
+            position: position as i32,
+            display_filename: crate::mailbox::sanitize_attachment_filename(&filename),
+            filename,
+            content_type,
+            size_bytes: bytes.len() as i64,
+            content_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+        });
+    }
+    Ok(validated)
 }
 
 pub fn recipient_delivery_addresses(recipients: &[OutboundRecipient]) -> Vec<String> {
@@ -2277,15 +2523,58 @@ pub fn build_outbound_mime(message: &OutboundMimeMessage) -> AppResult<Vec<u8>> 
         headers.push(format!("References: {}", references.join(" ")));
     }
     headers.push("MIME-Version: 1.0".to_string());
-    headers.push("Content-Type: text/plain; charset=utf-8".to_string());
-    headers.push("Content-Transfer-Encoding: 8bit".to_string());
+    if message.attachments.is_empty() {
+        headers.push("Content-Type: text/plain; charset=utf-8".to_string());
+        headers.push("Content-Transfer-Encoding: 8bit".to_string());
+        return Ok(format!(
+            "{}\r\n\r\n{}",
+            headers.join("\r\n"),
+            normalize_body_crlf(&message.body_text)
+        )
+        .into_bytes());
+    }
 
-    Ok(format!(
-        "{}\r\n\r\n{}",
-        headers.join("\r\n"),
-        normalize_body_crlf(&message.body_text)
-    )
-    .into_bytes())
+    let boundary = format!("ahara-boundary-{}", Uuid::new_v4());
+    headers.push(format!(
+        "Content-Type: multipart/mixed; boundary=\"{boundary}\""
+    ));
+    let body = multipart_mixed_body(&boundary, &message.body_text, &message.attachments)?;
+    Ok(format!("{}\r\n\r\n{}", headers.join("\r\n"), body).into_bytes())
+}
+
+fn multipart_mixed_body(
+    boundary: &str,
+    body_text: &str,
+    attachments: &[OutboundMimeAttachment],
+) -> AppResult<String> {
+    let mut body = String::new();
+    body.push_str(&format!("--{boundary}\r\n"));
+    body.push_str("Content-Type: text/plain; charset=utf-8\r\n");
+    body.push_str("Content-Transfer-Encoding: 8bit\r\n\r\n");
+    body.push_str(&normalize_body_crlf(body_text));
+    body.push_str("\r\n");
+
+    for attachment in attachments {
+        let filename = normalize_attachment_filename(&attachment.filename)?;
+        let content_type = normalize_content_type(&attachment.content_type)?;
+        body.push_str(&format!("--{boundary}\r\n"));
+        body.push_str(&format!(
+            "Content-Type: {content_type}; name=\"{}\"\r\n",
+            quote_header_parameter(&filename)
+        ));
+        body.push_str("Content-Transfer-Encoding: base64\r\n");
+        body.push_str(&format!(
+            "Content-Disposition: attachment; filename=\"{}\"\r\n\r\n",
+            quote_header_parameter(&filename)
+        ));
+        body.push_str(&wrap_base64(
+            &base64::engine::general_purpose::STANDARD.encode(&attachment.bytes),
+        ));
+        body.push_str("\r\n");
+    }
+
+    body.push_str(&format!("--{boundary}--"));
+    Ok(body)
 }
 
 fn append_recipients(
@@ -2337,6 +2626,28 @@ fn normalize_header_text(label: &str, value: &str) -> AppResult<String> {
     Ok(value.to_string())
 }
 
+fn normalize_attachment_filename(value: &str) -> AppResult<String> {
+    let filename = normalize_header_text("attachment filename", value)?;
+    let filename = crate::mailbox::sanitize_attachment_filename(&filename);
+    if filename.is_empty() {
+        return Err(AppError::Validation(
+            "attachment filename is required".to_string(),
+        ));
+    }
+    Ok(filename)
+}
+
+fn normalize_content_type(value: &str) -> AppResult<String> {
+    let content_type = normalize_header_text("attachment content type", value)?;
+    let content_type = content_type.to_ascii_lowercase();
+    if !content_type.contains('/') || content_type.contains(';') || content_type.trim().is_empty() {
+        return Err(AppError::Validation(
+            "attachment content type is invalid".to_string(),
+        ));
+    }
+    Ok(content_type)
+}
+
 fn normalize_message_id_header(label: &str, value: &str) -> AppResult<String> {
     let value = normalize_header_text(label, value)?;
     if value.is_empty() {
@@ -2361,6 +2672,19 @@ fn normalize_body_crlf(body: &str) -> String {
         .replace('\n', "\r\n")
 }
 
+fn quote_header_parameter(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn wrap_base64(value: &str) -> String {
+    value
+        .as_bytes()
+        .chunks(76)
+        .map(|chunk| std::str::from_utf8(chunk).unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join("\r\n")
+}
+
 #[cfg(test)]
 mod outbound_types_tests {
     use time::macros::datetime;
@@ -2370,10 +2694,10 @@ mod outbound_types_tests {
 
     use super::{
         ComposeMessageRequest, ForwardedMessageSource, InMemoryOutboundService,
-        InMemoryReplySource, OutboundMessageStatus, OutboundMimeMessage, OutboundRecipientKind,
-        OutboundSendWorker, OutboundService, ReplyMessageRequest, build_forward_body,
-        build_message_id, build_outbound_mime, build_reply_references, format_rfc2822_date,
-        reply_subject,
+        InMemoryReplySource, OutboundAttachmentInput, OutboundMessageStatus,
+        OutboundMimeAttachment, OutboundMimeMessage, OutboundRecipientKind, OutboundSendWorker,
+        OutboundService, ReplyMessageRequest, build_forward_body, build_message_id,
+        build_outbound_mime, build_reply_references, format_rfc2822_date, reply_subject,
     };
 
     #[test]
@@ -2385,6 +2709,7 @@ mod outbound_types_tests {
             bcc: Vec::new(),
             subject: "hello".to_string(),
             body_text: "plain body".to_string(),
+            attachments: Vec::new(),
         };
 
         let validated = request.validate("ahara.io").unwrap();
@@ -2402,6 +2727,31 @@ mod outbound_types_tests {
             validated.recipients[1].address_normalized,
             "team+ops@example.com"
         );
+        assert!(validated.attachments.is_empty());
+    }
+
+    #[test]
+    fn outbound_types_validate_attachment_inputs() {
+        let request = ComposeMessageRequest {
+            from_address: "contact@ahara.io".to_string(),
+            to: vec!["Person@Example.COM".to_string()],
+            cc: Vec::new(),
+            bcc: Vec::new(),
+            subject: "hello".to_string(),
+            body_text: "plain body".to_string(),
+            attachments: vec![OutboundAttachmentInput {
+                filename: "../invoice.pdf".to_string(),
+                content_type: "Application/PDF".to_string(),
+                content_base64: "ZGF0YQ==".to_string(),
+            }],
+        };
+
+        let validated = request.validate("ahara.io").unwrap();
+
+        assert_eq!(validated.attachments.len(), 1);
+        assert_eq!(validated.attachments[0].filename, "invoice.pdf");
+        assert_eq!(validated.attachments[0].content_type, "application/pdf");
+        assert_eq!(validated.attachments[0].size_bytes, 4);
     }
 
     #[test]
@@ -2413,6 +2763,7 @@ mod outbound_types_tests {
             bcc: Vec::new(),
             subject: "hello".to_string(),
             body_text: "plain body".to_string(),
+            attachments: Vec::new(),
         };
 
         assert!(matches!(
@@ -2444,6 +2795,7 @@ mod outbound_types_tests {
             in_reply_to: None,
             references: Vec::new(),
             reply_to: None,
+            attachments: Vec::new(),
         };
 
         let mime = String::from_utf8(build_outbound_mime(&message).unwrap()).unwrap();
@@ -2485,6 +2837,7 @@ mod outbound_types_tests {
             in_reply_to: Some("<source@sender.test>".to_string()),
             references,
             reply_to: Some("sender@example.com".to_string()),
+            attachments: Vec::new(),
         };
 
         let mime = String::from_utf8(build_outbound_mime(&message).unwrap()).unwrap();
@@ -2494,6 +2847,36 @@ mod outbound_types_tests {
         assert!(mime.contains("In-Reply-To: <source@sender.test>\r\n"));
         assert!(mime.contains("References: <thread-root@sender.test> <source@sender.test>\r\n"));
         assert!(mime.contains("FYI\r\n\r\n---------- Forwarded message ---------"));
+    }
+
+    #[test]
+    fn outbound_types_build_multipart_mime_with_attachments() {
+        let message = OutboundMimeMessage {
+            from_address: "contact@ahara.io".to_string(),
+            to_addresses: vec!["person@example.com".to_string()],
+            cc_addresses: Vec::new(),
+            bcc_addresses: Vec::new(),
+            subject: "Quarterly note".to_string(),
+            body_text: "hello".to_string(),
+            message_id: "<message-1@ahara.io>".to_string(),
+            date: "Thu, 11 Jun 2026 12:34:56 +0000".to_string(),
+            in_reply_to: None,
+            references: Vec::new(),
+            reply_to: None,
+            attachments: vec![OutboundMimeAttachment {
+                filename: "invoice.pdf".to_string(),
+                content_type: "application/pdf".to_string(),
+                bytes: b"data".to_vec(),
+            }],
+        };
+
+        let mime = String::from_utf8(build_outbound_mime(&message).unwrap()).unwrap();
+
+        assert!(mime.contains("Content-Type: multipart/mixed; boundary=\""));
+        assert!(mime.contains("Content-Type: text/plain; charset=utf-8\r\n"));
+        assert!(mime.contains("Content-Disposition: attachment; filename=\"invoice.pdf\""));
+        assert!(mime.contains("Content-Transfer-Encoding: base64\r\n"));
+        assert!(mime.contains("\r\n\r\nZGF0YQ==\r\n"));
     }
 
     #[test]
@@ -2510,6 +2893,7 @@ mod outbound_types_tests {
             in_reply_to: None,
             references: Vec::new(),
             reply_to: None,
+            attachments: Vec::new(),
         };
 
         assert!(matches!(
@@ -2539,6 +2923,7 @@ mod outbound_types_tests {
                 bcc: vec!["hidden@example.com".to_string()],
                 subject: "Plain note".to_string(),
                 body_text: "hello".to_string(),
+                attachments: Vec::new(),
             })
             .await
             .unwrap();
@@ -2583,6 +2968,7 @@ mod outbound_types_tests {
                 bcc: Vec::new(),
                 subject: "Plain note".to_string(),
                 body_text: "hello\n\n<script>alert(1)</script> world".to_string(),
+                attachments: Vec::new(),
             })
             .await
             .unwrap();
@@ -2625,6 +3011,7 @@ mod outbound_types_tests {
                     cc: Vec::new(),
                     bcc: Vec::new(),
                     body_text: "answer".to_string(),
+                    attachments: Vec::new(),
                 },
             )
             .await
@@ -2656,6 +3043,7 @@ mod outbound_types_tests {
                 bcc: Vec::new(),
                 subject: "Blocked".to_string(),
                 body_text: "body".to_string(),
+                attachments: Vec::new(),
             })
             .await;
         assert!(matches!(suppressed, Err(AppError::Validation(_))));
@@ -2669,6 +3057,7 @@ mod outbound_types_tests {
                     bcc: Vec::new(),
                     subject: format!("Note {index}"),
                     body_text: "body".to_string(),
+                    attachments: Vec::new(),
                 })
                 .await
                 .unwrap();
@@ -2682,6 +3071,7 @@ mod outbound_types_tests {
                 bcc: Vec::new(),
                 subject: "Over".to_string(),
                 body_text: "body".to_string(),
+                attachments: Vec::new(),
             })
             .await;
         assert!(matches!(over_limit, Err(AppError::Validation(_))));
@@ -2699,6 +3089,7 @@ mod outbound_types_tests {
                 bcc: Vec::new(),
                 subject: "Send it".to_string(),
                 body_text: "plain body".to_string(),
+                attachments: Vec::new(),
             })
             .await
             .unwrap();
@@ -2737,6 +3128,7 @@ mod outbound_types_tests {
                 bcc: Vec::new(),
                 subject: "Retry it".to_string(),
                 body_text: "plain body".to_string(),
+                attachments: Vec::new(),
             })
             .await
             .unwrap();
@@ -2766,6 +3158,7 @@ mod outbound_types_tests {
                 bcc: Vec::new(),
                 subject: "Do not send".to_string(),
                 body_text: "plain body".to_string(),
+                attachments: Vec::new(),
             })
             .await
             .unwrap();

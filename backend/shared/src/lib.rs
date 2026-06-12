@@ -1,3 +1,4 @@
+pub mod attachments;
 pub mod auth;
 pub mod config;
 pub mod contacts;
@@ -13,6 +14,7 @@ pub mod observability;
 pub mod outbound;
 pub mod ports;
 pub mod raw_mail_store;
+pub mod retention;
 pub mod routing;
 pub mod ses_mail_sender;
 

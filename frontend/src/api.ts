@@ -6,6 +6,7 @@ import type {
   CreateContactRequest,
   DomainConfig,
   ForwardingRule,
+  MailboxAttachmentDownload,
   MailboxMessageDetail,
   MailboxMessageSummary,
   MailboxThreadDetail,
@@ -14,6 +15,7 @@ import type {
   OutboundMessageSummary,
   ReplyMessageRequest,
   UpdateContactRequest,
+  UpdateAddressRequest,
   UpdateDomainRequest,
   UpsertForwardingRuleRequest,
 } from "./types";
@@ -93,6 +95,12 @@ export class ApiClient {
     );
   }
 
+  downloadAttachment(messageId: string, attachmentId: string) {
+    return this.request<MailboxAttachmentDownload>(
+      `/mailbox/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    );
+  }
+
   fetchThreadDetail(threadId: string) {
     return this.request<MailboxThreadDetail>(
       `/mailbox/threads/${encodeURIComponent(threadId)}`,
@@ -161,12 +169,30 @@ export class ApiClient {
     );
   }
 
-  addAddress(domainName: string, localPart: string) {
+  addAddress(
+    domainName: string,
+    localPart: string,
+    rawRetentionDays?: number | null,
+  ) {
     return this.request<AcceptedAddress>(
       `/domains/${encodeURIComponent(domainName)}/addresses`,
       {
         method: "POST",
-        body: { local_part: localPart },
+        body: { local_part: localPart, raw_retention_days: rawRetentionDays },
+      },
+    );
+  }
+
+  updateAddress(
+    domainName: string,
+    localPart: string,
+    request: UpdateAddressRequest,
+  ) {
+    return this.request<AcceptedAddress>(
+      `/domains/${encodeURIComponent(domainName)}/addresses/${encodeURIComponent(localPart)}`,
+      {
+        method: "PATCH",
+        body: request,
       },
     );
   }

@@ -106,6 +106,7 @@ const sentMessageDetail: OutboundMessageDetail = {
       position: 0,
     },
   ],
+  attachments: [],
   last_error: null,
   sent_at: null,
   created_at: "2026-01-01 00:00:00+00",
@@ -279,7 +280,7 @@ describe("MailboxView", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("update failed");
   });
 
-  it("submits text-only compose messages", async () => {
+  it("submits compose messages with attachments", async () => {
     const user = userEvent.setup();
     let composed:
       | {
@@ -287,6 +288,11 @@ describe("MailboxView", () => {
           to: string[];
           subject: string;
           body_text: string;
+          attachments: Array<{
+            filename: string;
+            content_type: string;
+            content_base64: string;
+          }>;
         }
       | undefined;
     renderMailboxView({
@@ -309,6 +315,10 @@ describe("MailboxView", () => {
     await user.type(screen.getByLabelText("To"), "person@example.com");
     await user.type(screen.getByLabelText("Subject"), "Plain note");
     await user.type(screen.getByLabelText("Body"), "hello <b>world</b>");
+    await user.upload(
+      screen.getByLabelText("Attachments"),
+      new File(["hi"], "invoice.pdf", { type: "application/pdf" }),
+    );
     await user.click(screen.getByRole("button", { name: "Send" }));
 
     expect(composed).toEqual({
@@ -318,6 +328,13 @@ describe("MailboxView", () => {
       body_text: "hello <b>world</b>",
       cc: [],
       bcc: [],
+      attachments: [
+        {
+          filename: "invoice.pdf",
+          content_type: "application/pdf",
+          content_base64: "aGk=",
+        },
+      ],
     });
     expect(await screen.findByText("Queued")).toBeInTheDocument();
   });
@@ -351,13 +368,18 @@ describe("MailboxView", () => {
     ).toBeInTheDocument();
   });
 
-  it("submits text-only replies from message detail", async () => {
+  it("submits replies with attachments from message detail", async () => {
     const user = userEvent.setup();
     let reply:
       | {
           messageId: string;
           from_address: string;
           body_text: string;
+          attachments: Array<{
+            filename: string;
+            content_type: string;
+            content_base64: string;
+          }>;
         }
       | undefined;
     renderMailboxView({
@@ -374,6 +396,7 @@ describe("MailboxView", () => {
           messageId,
           from_address: request.from_address,
           body_text: request.body_text,
+          attachments: request.attachments ?? [],
         };
         return {
           message_id: "outbound-1",
@@ -390,12 +413,23 @@ describe("MailboxView", () => {
     );
     await user.click(await screen.findByRole("button", { name: "Reply" }));
     await user.type(screen.getByLabelText("Reply"), "reply <i>body</i>");
+    await user.upload(
+      screen.getByLabelText("Reply attachments"),
+      new File(["ok"], "reply.txt", { type: "text/plain" }),
+    );
     await user.click(screen.getByRole("button", { name: "Send reply" }));
 
     expect(reply).toEqual({
       messageId: "message-1",
       from_address: "contact@ahara.io",
       body_text: "reply <i>body</i>",
+      attachments: [
+        {
+          filename: "reply.txt",
+          content_type: "text/plain",
+          content_base64: "b2s=",
+        },
+      ],
     });
   });
 

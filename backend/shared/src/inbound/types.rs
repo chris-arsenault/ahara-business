@@ -55,6 +55,16 @@ pub struct InboundAttachment {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboundAttachmentBody {
+    pub position: i32,
+    pub filename: String,
+    pub content_type: String,
+    pub size_bytes: Option<i64>,
+    pub content_id: Option<String>,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParsedInboundMessage {
     pub from: InboundMailbox,
     pub subject: String,

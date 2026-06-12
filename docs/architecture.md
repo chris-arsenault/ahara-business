@@ -37,9 +37,11 @@ attachment metadata, applies spam/virus disposition, updates threads, and
 creates normal mailbox rows only for accepted messages.
 
 Outbound compose, reply, and forwarding requests create `messages` and
-`outbound_work` rows. The send worker claims queued work in batches, checks
-suppressions before send, constructs text/plain MIME with threading headers,
-sends through SES, and records retry or final status. SES bounce and complaint
+`outbound_work` rows. Compose and reply can include attachment payloads, which
+are stored privately until the send worker builds outbound MIME. The send
+worker claims queued work in batches, checks suppressions before send,
+constructs text/plain or multipart/mixed MIME with threading headers, sends
+through SES, and records retry or final status. SES bounce and complaint
 notifications flow through SNS to the feedback handler, which updates message
 status and recipient suppressions.
 
@@ -47,8 +49,9 @@ status and recipient suppressions.
 
 The frontend renders stored plaintext only. Sender-controlled HTML is stripped
 at ingest, links are inert in the mailbox UI, display names and attachment
-filenames are treated as untrusted display data, and quarantined or rejected
-mail is excluded from normal mailbox reads.
+filenames are treated as untrusted display data, and inbound attachment bodies
+are served through authenticated API reads from retained private raw MIME.
+Quarantined or rejected mail is excluded from normal mailbox reads.
 
 The shared ALB validates Cognito tokens on authenticated API routes, and the API
 also verifies Cognito access tokens before serving app data. `/health` is the

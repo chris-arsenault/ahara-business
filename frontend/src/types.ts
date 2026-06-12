@@ -81,6 +81,12 @@ export type MailboxAttachment = {
   content_id: string | null;
 };
 
+export type MailboxAttachmentDownload = MailboxAttachment & {
+  message_id: string;
+  size_bytes: number;
+  content_base64: string;
+};
+
 export type Contact = {
   id: string;
   display_name: string;
@@ -108,18 +114,32 @@ export type DomainConfig = {
   domain_name: string;
   routing_policy: RoutingPolicy;
   active: boolean;
+  raw_retention_days: number | null;
   addresses: AcceptedAddress[];
 };
 
 export type AcceptedAddress = {
   local_part: string;
   active: boolean;
+  raw_retention_days: number | null;
 };
 
 export type UpdateDomainRequest = Partial<{
   routing_policy: RoutingPolicy;
   active: boolean;
+  raw_retention_days: number | null;
 }>;
+
+export type UpdateAddressRequest = Partial<{
+  active: boolean;
+  raw_retention_days: number | null;
+}>;
+
+export type OutboundAttachmentInput = {
+  filename: string;
+  content_type: string;
+  content_base64: string;
+};
 
 export type OutboundRecipient = {
   kind: "to" | "cc" | "bcc";
@@ -145,6 +165,7 @@ export type ComposeMessageRequest = {
 } & Partial<{
   cc: string[];
   bcc: string[];
+  attachments: OutboundAttachmentInput[];
 }>;
 
 export type ReplyMessageRequest = {
@@ -154,6 +175,7 @@ export type ReplyMessageRequest = {
   to: string[];
   cc: string[];
   bcc: string[];
+  attachments: OutboundAttachmentInput[];
 }>;
 
 export type OutboundMessageQueued = {
@@ -191,18 +213,25 @@ export type OutboundMessageDetail = {
   subject: string;
   body_text: string;
   recipients: OutboundRecipient[];
+  attachments: OutboundAttachmentInput[];
   last_error: string | null;
   sent_at: string | null;
   created_at: string;
 };
 
+export type ForwardingRuleKind = "domain" | "address";
+
 export type ForwardingRule = {
   id: string;
+  rule_kind: ForwardingRuleKind;
   domain_name: string;
-  local_part: string;
-  address_id: string;
+  local_part: string | null;
+  address_id: string | null;
   target_address: string;
   target_address_normalized: string;
+  sender_address_normalized: string | null;
+  plus_tag: string | null;
+  require_auth_pass: boolean;
   active: boolean;
   created_at: string | null;
   updated_at: string | null;
@@ -210,6 +239,10 @@ export type ForwardingRule = {
 
 export type UpsertForwardingRuleRequest = {
   domain_name: string;
-  local_part: string;
   target_address: string;
-};
+} & Partial<{
+  local_part: string | null;
+  sender_address: string | null;
+  plus_tag: string | null;
+  require_auth_pass: boolean;
+}>;

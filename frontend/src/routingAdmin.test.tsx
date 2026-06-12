@@ -1,7 +1,7 @@
 /* eslint-disable max-lines-per-function */
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RoutingAdmin, type RoutingAdminApi } from "./routingAdmin";
 import type {
@@ -14,9 +14,10 @@ const baseDomain: DomainConfig = {
   domain_name: "ahara.io",
   routing_policy: "allowlist",
   active: true,
+  raw_retention_days: 365,
   addresses: [
-    { local_part: "chris", active: true },
-    { local_part: "contact", active: false },
+    { local_part: "chris", active: true, raw_retention_days: null },
+    { local_part: "contact", active: false, raw_retention_days: 30 },
   ],
 };
 
@@ -37,10 +38,25 @@ function apiWithDomain(initial: DomainConfig = baseDomain) {
         ...domain,
         addresses: [
           ...domain.addresses,
-          { local_part: localPart, active: true },
+          { local_part: localPart, active: true, raw_retention_days: null },
         ],
       };
-      return { local_part: localPart, active: true };
+      return { local_part: localPart, active: true, raw_retention_days: null };
+    },
+    updateAddress: async (_domainName, localPart, request) => {
+      calls.push(`update-address:${localPart}:${JSON.stringify(request)}`);
+      const updated = {
+        local_part: localPart,
+        active: request.active ?? true,
+        raw_retention_days: request.raw_retention_days ?? null,
+      };
+      domain = {
+        ...domain,
+        addresses: domain.addresses.map((address) =>
+          address.local_part === localPart ? updated : address,
+        ),
+      };
+      return updated;
     },
     deactivateAddress: async (_domainName: string, localPart: string) => {
       calls.push(`deactivate:${localPart}`);
@@ -52,7 +68,7 @@ function apiWithDomain(initial: DomainConfig = baseDomain) {
             : address,
         ),
       };
-      return { local_part: localPart, active: false };
+      return { local_part: localPart, active: false, raw_retention_days: null };
     },
     listForwardingRules: async () => forwardingRules,
     upsertForwardingRule: async (request) => {
@@ -64,17 +80,10 @@ function apiWithDomain(initial: DomainConfig = baseDomain) {
           rule.target_address_normalized ===
             request.target_address.toLowerCase(),
       );
-      const rule: ForwardingRule = {
-        id: existing?.id ?? `rule-${forwardingRules.length + 1}`,
-        domain_name: request.domain_name,
-        local_part: request.local_part,
-        address_id: `${request.domain_name}:${request.local_part}`,
-        target_address: request.target_address,
-        target_address_normalized: request.target_address.toLowerCase(),
-        active: true,
-        created_at: null,
-        updated_at: null,
-      };
+      const rule = forwardingRuleFromRequest(
+        existing?.id ?? `rule-${forwardingRules.length + 1}`,
+        request,
+      );
       forwardingRules = existing
         ? forwardingRules.map((item) => (item.id === existing.id ? rule : item))
         : [...forwardingRules, rule];
@@ -94,6 +103,29 @@ function apiWithDomain(initial: DomainConfig = baseDomain) {
     },
   };
   return { api, calls };
+}
+
+function forwardingRuleFromRequest(
+  id: string,
+  request: Parameters<RoutingAdminApi["upsertForwardingRule"]>[0],
+): ForwardingRule {
+  return {
+    id,
+    rule_kind: request.local_part ? "address" : "domain",
+    domain_name: request.domain_name,
+    local_part: request.local_part ?? null,
+    address_id: request.local_part
+      ? `${request.domain_name}:${request.local_part}`
+      : null,
+    target_address: request.target_address,
+    target_address_normalized: request.target_address.toLowerCase(),
+    sender_address_normalized: request.sender_address?.toLowerCase() ?? null,
+    plus_tag: request.plus_tag?.toLowerCase() ?? null,
+    require_auth_pass: request.require_auth_pass ?? true,
+    active: true,
+    created_at: null,
+    updated_at: null,
+  };
 }
 
 afterEach(() => cleanup());
@@ -133,6 +165,31 @@ describe("RoutingAdmin", () => {
     await user.click(await screen.findByLabelText("Deactivate domain"));
 
     expect(calls).toContain('update:{"active":false}');
+  });
+
+  it("updates domain and address raw retention overrides", async () => {
+    const user = userEvent.setup();
+    const { api, calls } = apiWithDomain();
+
+    render(<RoutingAdmin apiClient={api} />);
+    const domainRetention = await screen.findByLabelText("Raw retention days");
+    await user.clear(domainRetention);
+    await user.type(domainRetention, "45");
+    await user.click(screen.getByRole("button", { name: "Save retention" }));
+
+    const addressRetention = screen.getByLabelText(
+      "Raw retention days for chris@ahara.io",
+    );
+    await user.type(addressRetention, "90");
+    await user.click(
+      within(addressRetention.closest("li") ?? document.body).getByRole(
+        "button",
+        { name: "Save" },
+      ),
+    );
+
+    expect(calls).toContain('update:{"raw_retention_days":45}');
+    expect(calls).toContain('update-address:chris:{"raw_retention_days":90}');
   });
 
   it("adds accepted local parts", async () => {

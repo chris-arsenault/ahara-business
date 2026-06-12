@@ -15,6 +15,7 @@ export type MailboxApi = Pick<ApiClient, "fetchMailboxMessages"> &
       ApiClient,
       | "fetchMessageDetail"
       | "fetchThreadDetail"
+      | "downloadAttachment"
       | "updateMessageState"
       | "linkMessageContact"
       | "listContacts"
@@ -66,6 +67,10 @@ export type InboxMailboxContentProps = {
     message: MailboxMessageDetail,
     request: ReplyMessageRequest,
   ) => Promise<void>;
+  onDownloadAttachment: (
+    message: MailboxMessageDetail,
+    attachmentId: string,
+  ) => Promise<void>;
   onSelectMessage: (message: MailboxMessageSummary) => void;
   onToggleRead: (message: MailboxMessageSummary | MailboxMessageDetail) => void;
   state: MailboxState;
@@ -109,6 +114,10 @@ export type ThreadDetailProps = {
     message: MailboxMessageDetail,
     request: ReplyMessageRequest,
   ) => Promise<void>;
+  onDownloadAttachment: (
+    message: MailboxMessageDetail,
+    attachmentId: string,
+  ) => Promise<void>;
 }>;
 
 export type MessageDetailProps = {
@@ -123,5 +132,9 @@ export type MessageDetailProps = {
   onReply: (
     message: MailboxMessageDetail,
     request: ReplyMessageRequest,
+  ) => Promise<void>;
+  onDownloadAttachment: (
+    message: MailboxMessageDetail,
+    attachmentId: string,
   ) => Promise<void>;
 }>;

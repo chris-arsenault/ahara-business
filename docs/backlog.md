@@ -4,18 +4,15 @@ Planned-but-not-built work. Each item is a positive assertion of future-state be
 
 ## Mail Capabilities
 
-- Add attachment extraction and in-app attachment viewing.
-- Add outbound attachment composition.
 - Add IMAP or native mobile-client access.
-- Add configurable raw MIME retention policies by domain or address.
 - Add full-text search ranking and advanced search scopes.
 - Add vectorized semantic mailbox search after the accepted-inbound read model
   is stable.
 
 ## Forwarding
 
-- Add arbitrary forwarding targets.
-- Add conditional forwarding rules over address, domain, auth verdict, sender, and tag.
+- Add per-rule delivery audit views that show why a forwarding rule matched or
+  did not match a specific inbound message.
 
 ## Business Systems
 

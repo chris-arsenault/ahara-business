@@ -144,6 +144,9 @@ describe("ApiClient", () => {
     await client.listDomains();
     await client.updateDomain("ahara.io", { routing_policy: "catchall" });
     await client.addAddress("ahara.io", "support");
+    await client.updateAddress("ahara.io", "support", {
+      raw_retention_days: null,
+    });
     await client.deactivateAddress("ahara.io", "support");
 
     expect(
@@ -155,12 +158,16 @@ describe("ApiClient", () => {
       ["GET", "https://api.mail.ahara.io/domains"],
       ["PATCH", "https://api.mail.ahara.io/domains/ahara.io"],
       ["POST", "https://api.mail.ahara.io/domains/ahara.io/addresses"],
+      ["PATCH", "https://api.mail.ahara.io/domains/ahara.io/addresses/support"],
       [
         "DELETE",
         "https://api.mail.ahara.io/domains/ahara.io/addresses/support",
       ],
     ]);
-    expect(bodyOf(requests[5])).toEqual({ local_part: "support" });
+    expect(bodyOf(requests[5])).toEqual({
+      local_part: "support",
+    });
+    expect(bodyOf(requests[6])).toEqual({ raw_retention_days: null });
   });
 
   it("calls outbound compose reply and status routes", async () => {
@@ -211,6 +218,9 @@ describe("ApiClient", () => {
       domain_name: "ahara.io",
       local_part: "contact",
       target_address: "target@example.com",
+      sender_address: "sender@example.com",
+      plus_tag: "sales",
+      require_auth_pass: false,
     });
     await client.deactivateForwardingRule("rule-1");
 
@@ -225,7 +235,20 @@ describe("ApiClient", () => {
       domain_name: "ahara.io",
       local_part: "contact",
       target_address: "target@example.com",
+      sender_address: "sender@example.com",
+      plus_tag: "sales",
+      require_auth_pass: false,
     });
+  });
+
+  it("calls mailbox attachment download route", async () => {
+    const { client, requests } = clientWithFetch(() => jsonResponse({}));
+
+    await client.downloadAttachment("message-1", "attachment-1");
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://api.mail.ahara.io/mailbox/messages/message-1/attachments/attachment-1",
+    ]);
   });
 
   it("normalizes API errors", async () => {

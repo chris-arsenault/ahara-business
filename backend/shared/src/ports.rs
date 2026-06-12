@@ -64,6 +64,7 @@ pub trait RawMailStore: Send + Sync {
     async fn get_raw_mail_metadata(&self, key: &str) -> AppResult<RawMailMetadata>;
     async fn get_raw_mail(&self, key: &str) -> AppResult<RawMailObject>;
     async fn put_raw_mail(&self, object: RawMailObject) -> AppResult<()>;
+    async fn delete_raw_mail(&self, key: &str) -> AppResult<()>;
 }
 
 #[async_trait]
@@ -156,6 +157,12 @@ pub mod test_doubles {
                 .lock()
                 .unwrap()
                 .insert(object.key.clone(), object);
+            Ok(())
+        }
+
+        async fn delete_raw_mail(&self, key: &str) -> AppResult<()> {
+            self.take_failure()?;
+            self.objects.lock().unwrap().remove(key);
             Ok(())
         }
     }

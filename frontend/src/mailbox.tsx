@@ -1,6 +1,7 @@
 /* eslint-disable complexity, max-lines-per-function, react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
+  Download,
   Inbox,
   Paperclip,
   PenLine,
@@ -10,6 +11,10 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
+import {
+  readOutboundAttachments,
+  saveAttachmentDownload,
+} from "./attachmentFiles";
 import type {
   DetailState,
   InboxMailboxContentProps,
@@ -33,6 +38,7 @@ import type {
   MailboxMessageSummary,
   OutboundMessageDetail,
   OutboundMessageSummary,
+  OutboundAttachmentInput,
   ReplyMessageRequest,
 } from "./types";
 
@@ -85,6 +91,11 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
   const handleReply = useCallback(
     (message: MailboxMessageDetail, request: ReplyMessageRequest) =>
       replyToMessage(message, request),
+    [apiClient],
+  );
+  const handleDownloadAttachment = useCallback(
+    (message: MailboxMessageDetail, attachmentId: string) =>
+      downloadAttachment(message, attachmentId),
     [apiClient],
   );
   const handleSelectMessage = useCallback(
@@ -231,6 +242,7 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
           contacts={contacts}
           detailState={detailState}
           onChangeMessageContact={handleChangeMessageContact}
+          onDownloadAttachment={handleDownloadAttachment}
           onReply={handleReply}
           onSelectMessage={handleSelectMessage}
           onToggleRead={handleToggleRead}
@@ -396,6 +408,28 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
     await apiClient.replyToMessage(message.id, request);
   }
 
+  async function downloadAttachment(
+    message: MailboxMessageDetail,
+    attachmentId: string,
+  ) {
+    if (!apiClient.downloadAttachment) {
+      setActionError("Attachment download is unavailable");
+      return;
+    }
+    setActionError(undefined);
+    try {
+      saveAttachmentDownload(
+        await apiClient.downloadAttachment(message.id, attachmentId),
+      );
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to download attachment",
+      );
+    }
+  }
+
   function applySummaryUpdate(updated: MailboxMessageSummary) {
     setState((current) =>
       current.status === "ready"
@@ -433,6 +467,7 @@ function InboxMailboxContent({
   contacts,
   detailState,
   onChangeMessageContact,
+  onDownloadAttachment,
   onReply,
   onSelectMessage,
   onToggleRead,
@@ -467,6 +502,7 @@ function InboxMailboxContent({
         contacts={contacts}
         onToggleRead={onToggleRead}
         onContactChange={onChangeMessageContact}
+        onDownloadAttachment={onDownloadAttachment}
         onReply={onReply}
       />
     </div>
@@ -644,6 +680,7 @@ function DetailPane({
   contacts,
   onToggleRead,
   onContactChange,
+  onDownloadAttachment,
   onReply,
 }: {
   state: DetailState;
@@ -656,6 +693,10 @@ function DetailPane({
   onReply: (
     message: MailboxMessageDetail,
     request: ReplyMessageRequest,
+  ) => Promise<void>;
+  onDownloadAttachment: (
+    message: MailboxMessageDetail,
+    attachmentId: string,
   ) => Promise<void>;
 }) {
   if (state.status === "empty") {
@@ -681,6 +722,7 @@ function DetailPane({
       contacts={contacts}
       onToggleRead={onToggleRead}
       onContactChange={onContactChange}
+      onDownloadAttachment={onDownloadAttachment}
       onReply={onReply}
     />
   );
@@ -764,6 +806,7 @@ export function ThreadDetail({
   contacts = [],
   onToggleRead,
   onContactChange,
+  onDownloadAttachment,
   onReply,
 }: ThreadDetailProps) {
   return (
@@ -774,6 +817,7 @@ export function ThreadDetail({
           key={message.id}
           message={message}
           onContactChange={onContactChange}
+          onDownloadAttachment={onDownloadAttachment}
           onReply={onReply}
           onToggleRead={onToggleRead}
         />
@@ -787,10 +831,18 @@ export function MessageDetail({
   contacts = [],
   onToggleRead,
   onContactChange,
+  onDownloadAttachment,
   onReply,
 }: MessageDetailProps) {
   const [replyOpen, setReplyOpen] = useState(false);
   const closeReply = useCallback(() => setReplyOpen(false), []);
+  const downloadAttachment = useCallback(
+    (attachmentId: string) => {
+      const result = onDownloadAttachment?.(message, attachmentId);
+      result?.catch(() => undefined);
+    },
+    [message, onDownloadAttachment],
+  );
   return (
     <article className="message-detail" aria-label="Message detail">
       <header className="message-detail-header">
@@ -864,7 +916,10 @@ export function MessageDetail({
         />
       ) : null}
       {message.attachments.length > 0 ? (
-        <AttachmentList attachments={message.attachments} />
+        <AttachmentList
+          attachments={message.attachments}
+          onDownload={downloadAttachment}
+        />
       ) : null}
     </article>
   );
@@ -881,6 +936,7 @@ function ComposeMessage({
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState("");
   const [bodyText, setBodyText] = useState("");
+  const [attachments, setAttachments] = useState<OutboundAttachmentInput[]>([]);
   const [status, setStatus] = useState<string>();
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -898,15 +954,21 @@ function ComposeMessage({
         bcc: [],
         subject,
         body_text: bodyText,
+        attachments,
       });
       setSubject("");
       setBodyText("");
       setTo("");
+      setAttachments([]);
       setStatus("Queued");
       onQueued();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to queue");
     }
+  }
+
+  async function selectAttachments(files: FileList | null) {
+    await selectOutboundAttachments(files, setAttachments, setStatus);
   }
 
   return (
@@ -939,6 +1001,17 @@ function ComposeMessage({
           onChange={(event) => setBodyText(event.currentTarget.value)}
         />
       </label>
+      <label>
+        <span>Attachments</span>
+        <input
+          multiple
+          type="file"
+          onChange={(event) =>
+            void selectAttachments(event.currentTarget.files)
+          }
+        />
+      </label>
+      <AttachmentChips attachments={attachments} />
       <button className="primary-button" type="submit">
         <Send aria-hidden="true" size={16} />
         Send
@@ -962,6 +1035,7 @@ function ReplyMessageForm({
 }) {
   const [fromAddress, setFromAddress] = useState("contact@ahara.io");
   const [bodyText, setBodyText] = useState("");
+  const [attachments, setAttachments] = useState<OutboundAttachmentInput[]>([]);
   const [status, setStatus] = useState<string>();
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -971,13 +1045,19 @@ function ReplyMessageForm({
       await onReply(message, {
         from_address: fromAddress,
         body_text: bodyText,
+        attachments,
       });
       setBodyText("");
+      setAttachments([]);
       setStatus("Queued");
       onQueued();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to queue");
     }
+  }
+
+  async function selectAttachments(files: FileList | null) {
+    await selectOutboundAttachments(files, setAttachments, setStatus);
   }
 
   return (
@@ -996,6 +1076,18 @@ function ReplyMessageForm({
           onChange={(event) => setBodyText(event.currentTarget.value)}
         />
       </label>
+      <label>
+        <span>Attachments</span>
+        <input
+          aria-label="Reply attachments"
+          multiple
+          type="file"
+          onChange={(event) =>
+            void selectAttachments(event.currentTarget.files)
+          }
+        />
+      </label>
+      <AttachmentChips attachments={attachments} />
       <button className="primary-button" type="submit">
         <Send aria-hidden="true" size={16} />
         Send reply
@@ -1003,6 +1095,42 @@ function ReplyMessageForm({
       {status ? <span className="compose-status">{status}</span> : null}
     </form>
   );
+}
+
+function AttachmentChips({
+  attachments,
+}: {
+  attachments: OutboundAttachmentInput[];
+}) {
+  if (attachments.length === 0) {
+    return null;
+  }
+
+  return (
+    <ul className="compose-attachment-list">
+      {attachments.map((attachment) => (
+        <li key={`${attachment.filename}:${attachment.content_base64.length}`}>
+          <Paperclip aria-hidden="true" size={14} />
+          {attachment.filename}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+async function selectOutboundAttachments(
+  files: FileList | null,
+  setAttachments: (attachments: OutboundAttachmentInput[]) => void,
+  setStatus: (status: string | undefined) => void,
+) {
+  setStatus(undefined);
+  try {
+    setAttachments(await readOutboundAttachments(files));
+  } catch (error) {
+    setStatus(
+      error instanceof Error ? error.message : "Unable to read attachments",
+    );
+  }
 }
 
 function splitAddresses(value: string) {
@@ -1052,7 +1180,13 @@ function SecurityLine({
   );
 }
 
-function AttachmentList({ attachments }: { attachments: MailboxAttachment[] }) {
+function AttachmentList({
+  attachments,
+  onDownload,
+}: {
+  attachments: MailboxAttachment[];
+  onDownload: (attachmentId: string) => void;
+}) {
   return (
     <section className="attachment-list" aria-label="Attachments">
       {attachments.map((attachment) => (
@@ -1066,6 +1200,15 @@ function AttachmentList({ attachments }: { attachments: MailboxAttachment[] }) {
           <small>
             {attachment.content_type} · {formatBytes(attachment.size_bytes)}
           </small>
+          <button
+            className="icon-button"
+            type="button"
+            title={`Download ${attachment.display_filename}`}
+            aria-label={`Download ${attachment.display_filename}`}
+            onClick={() => onDownload(attachment.id)}
+          >
+            <Download aria-hidden="true" size={15} />
+          </button>
         </div>
       ))}
     </section>

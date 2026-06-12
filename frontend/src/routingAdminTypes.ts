@@ -8,6 +8,7 @@ export type RoutingAdminApi = Pick<
   | "listDomains"
   | "updateDomain"
   | "addAddress"
+  | "updateAddress"
   | "deactivateAddress"
   | "listForwardingRules"
   | "upsertForwardingRule"
@@ -25,5 +26,14 @@ export type RoutingState =
 
 export type DraftForwarding = Record<
   string,
-  { local_part: string; target_address: string }
+  {
+    scope: "address" | "domain";
+    local_part: string;
+    target_address: string;
+    sender_address: string;
+    plus_tag: string;
+    require_auth_pass: boolean;
+  }
 >;
+
+export type RetentionDrafts = Record<string, string>;

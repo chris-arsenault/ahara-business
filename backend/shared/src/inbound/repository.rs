@@ -13,6 +13,8 @@ use crate::inbound::types::{
 };
 use crate::mail_security::{SecurityDisposition, SecurityReason};
 
+pub const DEFAULT_RAW_RETENTION_DAYS: i32 = 365;
+
 #[derive(Debug, Clone)]
 pub struct PersistInboundMessageRequest {
     pub receipt: InboundReceipt,
@@ -303,6 +305,8 @@ async fn insert_message(
     status: InboundMessageStatus,
 ) -> AppResult<Uuid> {
     let message_date_epoch = request.parsed.message_date_epoch.map(|epoch| epoch as f64);
+    let raw_retention_days =
+        raw_retention_days(tx, request.routing.domain_id, request.routing.address_id).await?;
     let row: MessageIdRow = sqlx::query_as(
         "INSERT INTO messages (
              direction, ses_message_id, rfc_message_id, in_reply_to, reference_ids, thread_id,
@@ -310,7 +314,7 @@ async fn insert_message(
              matched_domain_id, matched_address_id, matched_local_part, plus_tag, body_text,
              s3_raw_key, spf_result, dkim_result, dmarc_result, auth_verdict, spam_result,
              virus_result, security_disposition, security_reason, contact_id, status,
-             has_attachments, attachment_count, size_bytes, received_at
+             has_attachments, attachment_count, size_bytes, raw_retained_until, received_at
          )
          VALUES (
              'inbound', $1, $2, $3, $4, $5,
@@ -318,7 +322,7 @@ async fn insert_message(
              $11, $12, $13, $14, $15,
              $16, $17, $18, $19, $20, $21,
              $22, $23, $24, $25, $26,
-             $27, $28, $29, now()
+             $27, $28, $29, now() + ($30::integer * interval '1 day'), now()
          )
          RETURNING id",
     )
@@ -351,6 +355,7 @@ async fn insert_message(
     .bind(request.parsed.has_attachments())
     .bind(request.parsed.attachments.len() as i32)
     .bind(request.parsed.size_bytes)
+    .bind(raw_retention_days)
     .fetch_one(&mut **tx)
     .await
     .map_err(|err| AppError::Database(err.to_string()))?;
@@ -416,13 +421,13 @@ async fn insert_rejected_audit(
              direction, ses_message_id, from_address, from_address_normalized, from_display_name,
              body_text, s3_raw_key, spf_result, dkim_result, dmarc_result, auth_verdict,
              spam_result, virus_result, security_disposition, security_reason, status,
-             has_attachments, attachment_count, size_bytes, received_at
+             has_attachments, attachment_count, size_bytes, raw_retained_until, received_at
          )
          VALUES (
              'inbound', $1, $2, $3, $4,
              '', $5, $6, $7, $8, $9,
              $10, $11, 'rejected', $12, 'rejected',
-             false, 0, $13, now()
+             false, 0, $13, now() + ($14::integer * interval '1 day'), now()
          )
          RETURNING id",
     )
@@ -439,10 +444,32 @@ async fn insert_rejected_audit(
     .bind(&request.audit.security.virus_result)
     .bind(&request.audit.rejection_reason)
     .bind(request.audit.size_bytes)
+    .bind(DEFAULT_RAW_RETENTION_DAYS)
     .fetch_one(&mut **tx)
     .await
     .map_err(|err| AppError::Database(err.to_string()))?;
     Ok(row.id)
+}
+
+async fn raw_retention_days(
+    tx: &mut Transaction<'_, Postgres>,
+    domain_id: Uuid,
+    address_id: Option<Uuid>,
+) -> AppResult<i32> {
+    let days: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(
+             (SELECT raw_retention_days FROM addresses WHERE id = $2),
+             (SELECT raw_retention_days FROM domains WHERE id = $1),
+             $3
+         )",
+    )
+    .bind(domain_id)
+    .bind(address_id)
+    .bind(DEFAULT_RAW_RETENTION_DAYS)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|err| AppError::Database(err.to_string()))?;
+    Ok(days)
 }
 
 async fn insert_envelope_recipients(

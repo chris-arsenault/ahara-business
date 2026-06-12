@@ -13,9 +13,11 @@ Use the controlled [smoke check](smoke-check.md) after deployment.
   policies, and public bucket exposure.
 - The raw MIME bucket uses server-side encryption with AES-256 and bucket keys.
 - Bucket versioning is enabled.
-- Lifecycle controls expire current raw MIME objects after the configured
-  retention period, expire noncurrent versions, and abort incomplete multipart
-  uploads.
+- Application retention marks each accepted inbound message with a retained
+  until timestamp from address, domain, or default policy; the send worker
+  deletes due raw objects and records the deletion timestamp.
+- Lifecycle controls remain as a bucket-level safety net, expire noncurrent
+  versions, and abort incomplete multipart uploads.
 
 ### Scoped write and read access
 

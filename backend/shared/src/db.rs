@@ -3,10 +3,16 @@ use sqlx::postgres::PgPoolOptions;
 use crate::config::{AppConfig, DatabaseConfig};
 use crate::error::{AppError, AppResult};
 
-pub const MAIL_MODEL_MIGRATION: &str =
-    include_str!("../../../db/migrations/001_create_mail_model.sql");
-pub const MAIL_MODEL_ROLLBACK: &str =
-    include_str!("../../../db/migrations/rollback/001_create_mail_model.sql");
+pub const MAIL_MODEL_MIGRATION: &str = concat!(
+    include_str!("../../../db/migrations/001_create_mail_model.sql"),
+    "\n",
+    include_str!("../../../db/migrations/002_attachments_retention_forwarding.sql")
+);
+pub const MAIL_MODEL_ROLLBACK: &str = concat!(
+    include_str!("../../../db/migrations/rollback/002_attachments_retention_forwarding.sql"),
+    "\n",
+    include_str!("../../../db/migrations/rollback/001_create_mail_model.sql")
+);
 pub const INITIAL_ROUTING_SEED: &str =
     include_str!("../../../db/migrations/seed/001_initial_routing.sql");
 
