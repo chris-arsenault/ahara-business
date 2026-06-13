@@ -7,6 +7,8 @@ and exposes an authenticated web surface through shared Cognito.
 
 Architecture decisions are recorded in [docs/adr/README.md](docs/adr/README.md).
 Expansion work is tracked in [docs/backlog.md](docs/backlog.md).
+The post-MVP Business Hub direction is described in
+[docs/business-hub.md](docs/business-hub.md).
 
 ## Scope
 
@@ -22,6 +24,18 @@ Expansion work is tracked in [docs/backlog.md](docs/backlog.md).
   address-scoped forwarding rules from the web UI.
 - Use shared Cognito with TOTP setup and Cognito access-token validation.
 - Keep a thin contact model as the CRM boundary for later business workflows.
+
+## Post-MVP Expansion Boundary
+
+Ahara Mail remains the communication backbone for business correspondence.
+Business Hub expansion happens in this repo and builds contact-linked workflows
+around mail: calendar, booking, money tracking, mentee access, and
+limited-audience file sharing.
+
+Cross-app identity, object grants, and secure file-sharing permissions belong
+to `ahara-access` rather than to Ahara Mail. Ahara Mail can link messages,
+contacts, bookings, and business records to shared access resources, but it
+does not own global external-user authorization.
 
 ## Pipeline Shape
 

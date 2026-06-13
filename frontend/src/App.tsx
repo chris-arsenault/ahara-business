@@ -1,17 +1,24 @@
-/* eslint-disable complexity, max-lines-per-function, sonarjs/no-nested-conditional, sonarjs/void-use */
+/* eslint-disable max-lines-per-function, sonarjs/void-use */
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { AlertCircle, LogIn, LogOut, Mail, Route, Users } from "lucide-react";
+import {
+  AlertCircle,
+  FolderLock,
+  LogIn,
+  LogOut,
+  Mail,
+  Route,
+  Users,
+} from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import { WorkspaceView, type ActiveView, type AppApi } from "./appWorkspace";
 import { createApiClient } from "./api";
 import { createAuthClient, type AuthClient, type AuthState } from "./auth";
 import { config } from "./config";
-import { MailboxView, type MailboxApi } from "./mailbox";
-import { RoutingAdmin, type RoutingAdminApi } from "./routingAdmin";
 import { buildTotpSetupUri } from "./totp";
 
 type AppProps = Partial<{
   authClient: AuthClient;
-  apiClient: MailboxApi & Partial<RoutingAdminApi>;
+  apiClient: AppApi;
 }>;
 
 export function App({ authClient: injectedAuth, apiClient }: AppProps) {
@@ -20,10 +27,8 @@ export function App({ authClient: injectedAuth, apiClient }: AppProps) {
     [injectedAuth],
   );
   const [authState, setAuthState] = useState<AuthState>(authClient.getState());
-  const [activeView, setActiveView] = useState<
-    "mailbox" | "contacts" | "routing"
-  >("mailbox");
-  const appApiClient = useMemo<MailboxApi & Partial<RoutingAdminApi>>(
+  const [activeView, setActiveView] = useState<ActiveView>("mailbox");
+  const appApiClient = useMemo<AppApi>(
     () =>
       apiClient ??
       createApiClient({
@@ -112,6 +117,15 @@ export function App({ authClient: injectedAuth, apiClient }: AppProps) {
           </button>
           <button
             className="nav-button"
+            data-active={activeView === "files"}
+            type="button"
+            onClick={() => setActiveView("files")}
+          >
+            <FolderLock aria-hidden="true" size={17} />
+            Files
+          </button>
+          <button
+            className="nav-button"
             data-active={activeView === "routing"}
             type="button"
             onClick={() => setActiveView("routing")}
@@ -136,22 +150,7 @@ export function App({ authClient: injectedAuth, apiClient }: AppProps) {
         </div>
       </aside>
       <section className="workspace">
-        {activeView === "mailbox" ? (
-          <MailboxView apiClient={appApiClient} />
-        ) : activeView === "routing" &&
-          appApiClient.listDomains &&
-          appApiClient.updateDomain &&
-          appApiClient.addAddress &&
-          appApiClient.deactivateAddress &&
-          appApiClient.listForwardingRules &&
-          appApiClient.upsertForwardingRule &&
-          appApiClient.deactivateForwardingRule ? (
-          <RoutingAdmin apiClient={appApiClient as RoutingAdminApi} />
-        ) : (
-          <div className="empty-state">
-            {activeView === "contacts" ? "Contacts" : "Routing"}
-          </div>
-        )}
+        <WorkspaceView activeView={activeView} apiClient={appApiClient} />
       </section>
     </main>
   );

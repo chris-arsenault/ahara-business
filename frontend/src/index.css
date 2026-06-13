@@ -1266,6 +1266,108 @@ button {
   text-transform: uppercase;
 }
 
+/* ---------- Shared files ---------- */
+
+.shared-files-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  border-bottom: 1px solid var(--rule-strong);
+  padding: 16px;
+}
+
+.shared-files-form {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 12px;
+  background: var(--paper);
+}
+
+.shared-files-form h2,
+.shared-table-section h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 560;
+}
+
+.shared-inline-form {
+  display: grid;
+  gap: 8px;
+}
+
+.shared-compact-list,
+.shared-object-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shared-compact-list li,
+.shared-object-list li {
+  min-width: 0;
+  min-height: 38px;
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 0 8px 0 10px;
+  background: var(--paper);
+}
+
+.shared-compact-list li {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.shared-object-list li {
+  grid-template-columns: minmax(0, 1.4fr) minmax(90px, 0.7fr) auto 38px;
+}
+
+.shared-object-list li:has(> :nth-child(3):last-child) {
+  grid-template-columns: minmax(0, 1.4fr) minmax(90px, 0.7fr) auto;
+}
+
+.shared-compact-list span,
+.shared-compact-list strong,
+.shared-object-list span,
+.shared-object-list em,
+.shared-object-list strong {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shared-compact-list strong,
+.shared-object-list em,
+.shared-object-list strong {
+  color: var(--ink-faint);
+  font-size: 0.6875rem;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.shared-table-section {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.shared-table-section + .shared-table-section {
+  border-top: 3px double var(--rule-strong);
+}
+
 /* ---------- Scrollbars ---------- */
 
 .thread-detail,
@@ -1324,7 +1426,8 @@ button {
   }
 
   .forwarding-add-form,
-  .forwarding-rule-list li {
+  .forwarding-rule-list li,
+  .shared-object-list li {
     grid-template-columns: 1fr;
   }
 

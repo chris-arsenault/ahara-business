@@ -2,6 +2,7 @@ type RuntimeGlobal<T> = T | undefined;
 
 type RuntimeConfig = Partial<{
   apiBaseUrl: string;
+  accessApiBaseUrl: string;
   appBaseUrl: string;
   productName: string;
   cognitoUserPoolId: string;
@@ -24,6 +25,10 @@ export const config = {
   apiBaseUrl:
     readRuntime(runtimeConfig?.apiBaseUrl) ??
     import.meta.env.VITE_API_BASE_URL ??
+    "",
+  accessApiBaseUrl:
+    readRuntime(runtimeConfig?.accessApiBaseUrl) ??
+    import.meta.env.VITE_ACCESS_API_BASE_URL ??
     "",
   appBaseUrl:
     readRuntime(runtimeConfig?.appBaseUrl) ??

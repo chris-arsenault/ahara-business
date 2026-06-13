@@ -9,3 +9,4 @@
 | [0005](0005-relational-mail-model-and-outbound-work.md) | Relational Mail Model And Outbound Work | Accepted | 2026-06-12 |
 | [0006](0006-pre-s3-receipt-gate.md) | Pre-S3 Receipt Gate | Accepted | 2026-06-12 |
 | [0007](0007-raw-mime-retention-and-limits.md) | Raw MIME Retention And Limits | Accepted | 2026-06-12 |
+| [0008](0008-shared-access-and-secure-file-sharing-service.md) | Shared Access And Secure File Sharing Service | Accepted | 2026-06-12 |

@@ -3,6 +3,7 @@
 | Topic | Link |
 | ---- | ---- |
 | Architecture | [architecture.md](architecture.md) |
+| Business Hub expansion | [business-hub.md](business-hub.md) |
 | Operations | [operations.md](operations.md) |
 | Deploy | [deploy.md](deploy.md) |
 | Smoke check | [smoke-check.md](smoke-check.md) |

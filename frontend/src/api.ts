@@ -1,4 +1,11 @@
 import { config } from "./config";
+import { attachAccessApi, type AccessApiSurface } from "./accessApi";
+import {
+  authenticatedRequest,
+  ApiClientError,
+  type ApiClientOptions,
+  type ApiRequestOptions,
+} from "./apiCore";
 import type {
   AcceptedAddress,
   ComposeMessageRequest,
@@ -20,60 +27,21 @@ import type {
   UpsertForwardingRuleRequest,
 } from "./types";
 
-export type AccessTokenRequest = Partial<{
-  forceRefresh: boolean;
-}>;
-
-type FetchLike = (
-  input: RequestInfo | URL,
-  init?: RequestInit,
-) => Promise<Response>;
-
-export type ApiClientOptions = {
-  getAccessToken: (
-    request?: AccessTokenRequest,
-  ) => Promise<string | undefined> | string | undefined;
-} & Partial<{
-  baseUrl: string;
-  fetchImpl: FetchLike;
-}>;
-
 type MailboxListQuery = Partial<{
   limit: number;
   unread_only: boolean;
 }>;
 
-type ApiRequestOptions = Partial<{
-  method: string;
-  body: unknown;
-}>;
-
-type ApiErrorPayload = Partial<{
-  code: string;
-  message: string;
-}>;
-
-export class ApiClientError extends Error {
-  readonly status: number;
-  readonly code: string;
-
-  constructor(status: number, code: string, message: string) {
-    super(message);
-    this.status = status;
-    this.code = code;
-    this.name = "ApiClientError";
-  }
-}
+export { ApiClientError };
+export type { AccessTokenRequest, ApiClientOptions } from "./apiCore";
 
 export class ApiClient {
   private readonly baseUrl: string;
-  private readonly fetchImpl: FetchLike;
   private readonly options: ApiClientOptions;
 
   constructor(options: ApiClientOptions) {
     this.options = options;
     this.baseUrl = (options.baseUrl ?? config.apiBaseUrl).replace(/\/$/, "");
-    this.fetchImpl = options.fetchImpl ?? defaultFetch;
   }
 
   fetchMailboxMessages(query: MailboxListQuery = {}) {
@@ -253,69 +221,17 @@ export class ApiClient {
     path: string,
     options: ApiRequestOptions = {},
   ): Promise<T> {
-    const token = await this.options.getAccessToken();
-    if (!token) {
-      throw new ApiClientError(401, "unauthorized", "missing access token");
-    }
-
-    const { method, headers, body } = requestParts(token, options);
-    let response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      method,
-      headers,
-      body,
+    return authenticatedRequest<T>({
+      baseUrl: this.baseUrl,
+      clientOptions: this.options,
+      path,
+      requestOptions: options,
     });
-    if (response.status === 401) {
-      const refreshedToken = await this.options.getAccessToken({
-        forceRefresh: true,
-      });
-      if (refreshedToken) {
-        const retry = requestParts(refreshedToken, options);
-        response = await this.fetchImpl(`${this.baseUrl}${path}`, retry);
-      }
-    }
-    if (!response.ok) {
-      throw await apiError(response);
-    }
-    if (response.status === 204) {
-      return undefined as T;
-    }
-    return (await response.json()) as T;
   }
-}
-
-function requestParts(token: string, options: ApiRequestOptions) {
-  const headers = new Headers({
-    authorization: `Bearer ${token}`,
-  });
-  let body: string | undefined;
-  if (options.body !== undefined) {
-    headers.set("content-type", "application/json");
-    body = JSON.stringify(options.body);
-  }
-
-  return {
-    method: options.method ?? "GET",
-    headers,
-    body,
-  };
 }
 
 export function createApiClient(options: ApiClientOptions) {
-  return new ApiClient(options);
-}
-
-async function apiError(response: Response) {
-  let payload: ApiErrorPayload = {};
-  try {
-    payload = (await response.json()) as ApiErrorPayload;
-  } catch {
-    payload = {};
-  }
-  return new ApiClientError(
-    response.status,
-    payload.code ?? "api_error",
-    payload.message ?? response.statusText,
-  );
+  return attachAccessApi(new ApiClient(options), options);
 }
 
 function queryString(params: URLSearchParams) {
@@ -323,6 +239,4 @@ function queryString(params: URLSearchParams) {
   return value ? `?${value}` : "";
 }
 
-function defaultFetch(input: RequestInfo | URL, init?: RequestInit) {
-  return globalThis.fetch(input, init);
-}
+export type AppApiClient = ApiClient & AccessApiSurface;

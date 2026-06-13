@@ -20,6 +20,7 @@ and documentation for operating the first Ahara mail domain.
 | ---- | ---- |
 | Product spec | [mail-foundation-spec.md](mail-foundation-spec.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
+| Business Hub expansion | [docs/business-hub.md](docs/business-hub.md) |
 | Operations | [docs/operations.md](docs/operations.md) |
 | Deploy | [docs/deploy.md](docs/deploy.md) |
 | Smoke check | [docs/smoke-check.md](docs/smoke-check.md) |

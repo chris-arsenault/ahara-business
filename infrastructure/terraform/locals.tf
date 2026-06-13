@@ -5,6 +5,7 @@ locals {
 
   frontend_hostname = "mail.ahara.io"
   api_hostname      = "api.mail.ahara.io"
+  access_api_url    = "https://api.access.ahara.io"
 
   mail_domain     = local.domain_name
   raw_mail_bucket = "${local.prefix}-raw-mail-${data.aws_caller_identity.current.account_id}"

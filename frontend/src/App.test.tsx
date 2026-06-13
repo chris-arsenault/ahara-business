@@ -7,6 +7,7 @@ import { App } from "./App";
 import type { AuthClient, AuthState } from "./auth";
 import type { MailboxApi } from "./mailbox";
 import type { RoutingAdminApi } from "./routingAdmin";
+import type { SharedFilesApi } from "./sharedFiles";
 import type { MailboxMessageSummary } from "./types";
 
 class FakeAuthClient implements AuthClient {
@@ -106,7 +107,8 @@ const defaultApiClient: MailboxApi = {
 
 function renderApp(
   authClient: AuthClient,
-  apiClient: MailboxApi & Partial<RoutingAdminApi> = defaultApiClient,
+  apiClient: MailboxApi &
+    Partial<RoutingAdminApi & SharedFilesApi> = defaultApiClient,
 ) {
   return render(<App authClient={authClient} apiClient={apiClient} />);
 }
@@ -302,4 +304,88 @@ describe("App", () => {
 
     expect(await screen.findByText("ahara.io")).toBeInTheDocument();
   });
+
+  it("opens the shared files panel from signed-in navigation", async () => {
+    const user = userEvent.setup();
+    renderApp(
+      new FakeAuthClient({
+        status: "signed-in",
+        user: {
+          subject: null,
+          email: "chris@example.test",
+          username: null,
+        },
+      }),
+      sharedFilesApi(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Files" }));
+
+    expect(await screen.findByText("Shared files")).toBeInTheDocument();
+    expect(screen.getAllByText("master.wav").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Mastering engineer").length).toBeGreaterThan(0);
+  });
 });
+
+function sharedFilesApi(): MailboxApi & SharedFilesApi {
+  return {
+    fetchMailboxMessages: async () => [message],
+    listAccessPrincipals: async () => [accessPrincipal],
+    createAccessPrincipal: async () => accessPrincipal,
+    listAccessAudiences: async () => [accessAudience],
+    createAccessAudience: async () => accessAudience,
+    listAccessAudienceMembers: async () => [accessMember],
+    addAccessAudienceMember: async () => accessMember,
+    listAccessAssets: async () => [accessAsset],
+    uploadAccessAsset: async () => accessAsset,
+    listAccessGrants: async () => [accessGrant],
+    createAccessGrant: async () => accessGrant,
+    revokeAccessGrant: async () => ({ ...accessGrant, revoked_at: "now" }),
+  };
+}
+
+const accessPrincipal = {
+  id: "principal-1",
+  principal_kind: "external" as const,
+  cognito_sub: null,
+  username: "engineer",
+  email: null,
+  display_name: "Mastering engineer",
+  active: true,
+};
+
+const accessAudience = {
+  id: "audience-1",
+  audience_key: "mastering",
+  display_name: "Mastering",
+  description: null,
+  active: true,
+};
+
+const accessMember = {
+  audience_id: "audience-1",
+  principal_id: "principal-1",
+};
+
+const accessAsset = {
+  id: "asset-1",
+  owner_app: "tsonu_music",
+  resource_id: null,
+  storage_kind: "managed_s3" as const,
+  filename: "master.wav",
+  content_type: "audio/wav",
+  size_bytes: 4096,
+  sha256: null,
+  active: true,
+};
+
+const accessGrant = {
+  id: "grant-1",
+  principal_id: "principal-1",
+  audience_id: null,
+  resource_id: null,
+  asset_id: "asset-1",
+  permission_level: "download" as const,
+  expires_at: null,
+  revoked_at: null,
+};

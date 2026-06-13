@@ -1,6 +1,6 @@
 /* eslint-disable max-lines-per-function */
 import { afterEach, describe, expect, it } from "vitest";
-import { ApiClient, ApiClientError } from "./api";
+import { ApiClient, ApiClientError, createApiClient } from "./api";
 
 type RecordedRequest = {
   url: string;
@@ -251,6 +251,65 @@ describe("ApiClient", () => {
     ]);
   });
 
+  it("calls shared access routes and uploads to a signed URL", async () => {
+    const requests: RecordedRequest[] = [];
+    const client = createApiClient({
+      baseUrl: "https://api.mail.ahara.io",
+      accessBaseUrl: "https://api.access.ahara.io",
+      getAccessToken: () => "token-123",
+      fetchImpl: async (input, init = {}) => {
+        const request = { url: String(input), init };
+        requests.push(request);
+        if (request.url === "https://s3.example.test/upload") {
+          return new Response(null, { status: 200 });
+        }
+        return jsonResponse(accessResponse(request.url));
+      },
+    });
+    const file = new File(["master"], "master.wav", { type: "audio/wav" });
+
+    await client.listAccessPrincipals();
+    await client.createAccessPrincipal({
+      principal_kind: "external",
+      display_name: "Engineer",
+      username: "engineer",
+    });
+    await client.listAccessAudiences();
+    await client.createAccessAudience({
+      audience_key: "mastering",
+      display_name: "Mastering",
+    });
+    await client.addAccessAudienceMember("audience-1", "principal-1");
+    await client.uploadAccessAsset(file, {
+      owner_app: "tsonu_music",
+      filename: file.name,
+      content_type: file.type,
+      size_bytes: file.size,
+    });
+    await client.createAccessGrant({
+      asset_id: "asset-1",
+      principal_id: "principal-1",
+      permission_level: "download",
+    });
+    await client.revokeAccessGrant("grant-1");
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://api.access.ahara.io/principals",
+      "https://api.access.ahara.io/principals",
+      "https://api.access.ahara.io/audiences",
+      "https://api.access.ahara.io/audiences",
+      "https://api.access.ahara.io/audiences/audience-1/members",
+      "https://api.access.ahara.io/assets/upload-url",
+      "https://s3.example.test/upload",
+      "https://api.access.ahara.io/grants",
+      "https://api.access.ahara.io/grants/grant-1/revoke",
+    ]);
+    expect(bodyOf(requests[4])).toEqual({ principal_id: "principal-1" });
+    expect(new Headers(requests[6].init.headers).get("Content-Type")).toBe(
+      "audio/wav",
+    );
+  });
+
   it("normalizes API errors", async () => {
     const { client } = clientWithFetch(() =>
       jsonResponse({ code: "validation_error", message: "bad request" }, 400),
@@ -276,3 +335,47 @@ describe("ApiClient", () => {
     });
   });
 });
+
+function accessResponse(url: string) {
+  if (url.endsWith("/assets/upload-url")) {
+    return {
+      asset: accessAsset,
+      upload: {
+        url: "https://s3.example.test/upload",
+        method: "PUT",
+        headers: { "Content-Type": "audio/wav" },
+        expires_in_seconds: 900,
+      },
+    };
+  }
+  if (url.endsWith("/grants/grant-1/revoke")) {
+    return { ...accessGrant, revoked_at: "2026-01-01T00:00:00Z" };
+  }
+  if (url.endsWith("/grants")) {
+    return accessGrant;
+  }
+  return {};
+}
+
+const accessAsset = {
+  id: "asset-1",
+  owner_app: "tsonu_music",
+  resource_id: null,
+  storage_kind: "managed_s3",
+  filename: "master.wav",
+  content_type: "audio/wav",
+  size_bytes: 6,
+  sha256: null,
+  active: true,
+};
+
+const accessGrant = {
+  id: "grant-1",
+  principal_id: "principal-1",
+  audience_id: null,
+  resource_id: null,
+  asset_id: "asset-1",
+  permission_level: "download",
+  expires_at: null,
+  revoked_at: null,
+};

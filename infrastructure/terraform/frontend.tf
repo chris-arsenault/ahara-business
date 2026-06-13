@@ -6,6 +6,7 @@ module "frontend" {
 
   runtime_config = {
     apiBaseUrl        = "https://${local.api_hostname}"
+    accessApiBaseUrl  = local.access_api_url
     appBaseUrl        = "https://${local.frontend_hostname}"
     productName       = local.product_name
     cognitoUserPoolId = module.ctx.cognito_user_pool_id
