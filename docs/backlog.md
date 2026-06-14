@@ -25,21 +25,18 @@ Planned-but-not-built work. Each item is a positive assertion of future-state be
 - Add availability windows and richer booking confirmation/cancellation flows.
 - Add follow-up task generation from booking and calendar state changes.
 
-## Basic Finance In/Out
+## Tax/Audit Finance
 
-- Add invoice records for expected money in, linked to contacts, bookings,
-  messages, files, and notes.
-- Add payment records for received money, with amount, method, date, reference,
-  status, and optional invoice link.
-- Add expense records for money out, with vendor/contact, category, receipt
-  source, reimbursable state, and tax notes.
-- Add a normalized ledger-event read model for simple in/out reporting.
-- Add operator views for unpaid, overdue, paid, reimbursable, unreconciled, and
-  period-total summaries.
-- Add mailbox shortcuts for starting invoices, payments, or expenses from
-  invoice emails, receipts, payment confirmations, and booking threads.
-- Defer bank feeds, payment processing, tax filing, and double-entry accounting
-  until the manual in/out workflow is stable.
+- Add CSV export for expense allocation and client receivable status by tax
+  year.
+- Add receipt attachment shortcuts from mailbox messages and shared files into
+  expense records.
+- Add recurring-expense review reminders so cloud, AI, internet, software, and
+  other ongoing costs are revisited before tax prep.
+- Add contact/project filters for client receivables and expense records.
+- Add finance rows to the future contact activity timeline.
+- Keep payment processing, payment credentials, checkout links, bank feeds, tax
+  filing, and double-entry accounting out of this app.
 
 ## Business Hub Expansion
 

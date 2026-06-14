@@ -11,6 +11,13 @@ use shared::contacts::{Contact, InMemoryContactsService};
 use shared::db::database_url;
 use shared::domain_config::{AcceptedAddress, DomainConfig, InMemoryDomainConfigService};
 use shared::error::{AppError, AppResult};
+use shared::finance::{
+    CreateFinanceExpenseRequest, CreateFinanceReceivableRequest, ExpenseKind, ExpenseStatus,
+    FinanceCategoryTotal, FinanceExpense, FinanceExpenseQuery, FinanceReceivable,
+    FinanceReceivableQuery, FinanceService, FinanceSummary, FinanceSummaryQuery,
+    FinanceVendorTotal, ReceivableStatus, RecurrenceInterval, UpdateFinanceExpenseRequest,
+    UpdateFinanceReceivableRequest,
+};
 use shared::forwarding::InMemoryForwardingRuleService;
 use shared::mailbox::{
     InMemoryMailboxMessage, InMemoryMailboxService, MailboxAttachment, MailboxAuthResult,
@@ -53,6 +60,143 @@ impl RawMailStore for TestRawMailStore {
 
     async fn delete_raw_mail(&self, _key: &str) -> AppResult<()> {
         Ok(())
+    }
+}
+
+struct TestFinanceService;
+
+#[async_trait::async_trait]
+impl FinanceService for TestFinanceService {
+    async fn list_expenses(&self, _query: FinanceExpenseQuery) -> AppResult<Vec<FinanceExpense>> {
+        Ok(vec![expense("expense-1", "AWS", "cloud", 12_000, 7500)])
+    }
+
+    async fn create_expense(
+        &self,
+        request: CreateFinanceExpenseRequest,
+    ) -> AppResult<FinanceExpense> {
+        Ok(expense(
+            "expense-2",
+            request.vendor_name.as_deref().unwrap_or(""),
+            &request.category,
+            request.amount_cents,
+            request.business_use_percent_bps.unwrap_or(10000),
+        ))
+    }
+
+    async fn update_expense(
+        &self,
+        expense_id: &str,
+        request: UpdateFinanceExpenseRequest,
+    ) -> AppResult<FinanceExpense> {
+        let mut item = expense(expense_id, "AWS", "cloud", 12_000, 7500);
+        item.status = request.status.unwrap_or(item.status);
+        Ok(item)
+    }
+
+    async fn list_receivables(
+        &self,
+        _query: FinanceReceivableQuery,
+    ) -> AppResult<Vec<FinanceReceivable>> {
+        Ok(vec![receivable("receivable-1", "Client session", 25_000)])
+    }
+
+    async fn create_receivable(
+        &self,
+        request: CreateFinanceReceivableRequest,
+    ) -> AppResult<FinanceReceivable> {
+        Ok(receivable(
+            "receivable-2",
+            &request.title,
+            request.amount_cents,
+        ))
+    }
+
+    async fn update_receivable(
+        &self,
+        receivable_id: &str,
+        request: UpdateFinanceReceivableRequest,
+    ) -> AppResult<FinanceReceivable> {
+        let mut item = receivable(receivable_id, "Client session", 25_000);
+        item.status = request.status.unwrap_or(item.status);
+        Ok(item)
+    }
+
+    async fn summary(&self, query: FinanceSummaryQuery) -> AppResult<FinanceSummary> {
+        Ok(FinanceSummary {
+            tax_year: query.tax_year.unwrap_or(2026),
+            gross_expense_cents: 12_000,
+            business_expense_cents: 9_000,
+            personal_expense_cents: 3_000,
+            receivable_owed_cents: 25_000,
+            receivable_paid_cents: 0,
+            category_totals: vec![FinanceCategoryTotal {
+                category: "cloud".to_string(),
+                gross_cents: 12_000,
+                business_cents: 9_000,
+                personal_cents: 3_000,
+            }],
+            vendor_totals: vec![FinanceVendorTotal {
+                vendor_name: "AWS".to_string(),
+                gross_cents: 12_000,
+                business_cents: 9_000,
+                personal_cents: 3_000,
+            }],
+        })
+    }
+}
+
+fn expense(
+    id: impl Into<String>,
+    vendor_name: &str,
+    category: &str,
+    amount_cents: i64,
+    bps: i32,
+) -> FinanceExpense {
+    let business_amount_cents = amount_cents * i64::from(bps) / 10000;
+    FinanceExpense {
+        id: id.into(),
+        title: "Cloud hosting".to_string(),
+        vendor_name: vendor_name.to_string(),
+        category: category.to_string(),
+        expense_kind: ExpenseKind::Recurring,
+        recurrence_interval: RecurrenceInterval::Monthly,
+        status: ExpenseStatus::Active,
+        amount_cents,
+        business_amount_cents,
+        personal_amount_cents: amount_cents - business_amount_cents,
+        currency: "USD".to_string(),
+        incurred_on: "2026-06-01".to_string(),
+        service_period_start: Some("2026-06-01".to_string()),
+        service_period_end: Some("2026-06-30".to_string()),
+        business_use_percent_bps: bps,
+        source_message_id: None,
+        source_attachment_id: None,
+        source_asset_id: None,
+        notes: "shared service allocation".to_string(),
+        created_at: "now".to_string(),
+        updated_at: "now".to_string(),
+    }
+}
+
+fn receivable(id: impl Into<String>, title: &str, amount_cents: i64) -> FinanceReceivable {
+    FinanceReceivable {
+        id: id.into(),
+        contact_id: Some("contact-1".to_string()),
+        title: title.to_string(),
+        status: ReceivableStatus::Owed,
+        amount_cents,
+        currency: "USD".to_string(),
+        issued_on: Some("2026-06-01".to_string()),
+        due_on: Some("2026-06-15".to_string()),
+        paid_on: None,
+        source_message_id: None,
+        source_booking_id: None,
+        source_asset_id: None,
+        external_reference: "Venmo note".to_string(),
+        notes: "manual status only".to_string(),
+        created_at: "now".to_string(),
+        updated_at: "now".to_string(),
     }
 }
 
@@ -235,6 +379,7 @@ impl ApiState {
             outbound,
             forwarding,
             app_authorizations,
+            finance: Arc::new(TestFinanceService),
         }
     }
 }

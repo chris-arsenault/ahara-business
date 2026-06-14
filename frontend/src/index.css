@@ -1383,6 +1383,12 @@ button {
   border-bottom: 0;
 }
 
+.business-grid.finance-controls {
+  grid-template-columns: minmax(160px, 220px);
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
 .calendar-view-controls {
   display: flex;
   flex-wrap: wrap;
@@ -1462,6 +1468,42 @@ button {
 
 .business-list select {
   width: 100%;
+}
+
+.finance-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  border-bottom: 1px solid var(--rule-strong);
+  padding: 16px;
+}
+
+.finance-summary-grid div {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 10px;
+  background: var(--paper-strong);
+}
+
+.finance-summary-grid span {
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+}
+
+.finance-summary-grid strong {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 620;
+}
+
+.finance-list article {
+  grid-template-columns:
+    minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1fr)
+    minmax(90px, auto);
 }
 
 .inline-actions {

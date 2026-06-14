@@ -3,6 +3,7 @@ use std::sync::Arc;
 mod app_authorization_routes;
 mod calendar_routes;
 mod cors;
+mod finance_routes;
 mod forwarding_audit_routes;
 #[cfg(test)]
 mod test_support;
@@ -27,6 +28,7 @@ use shared::domain_config::{
     PgDomainConfigService, UpdateAddressRequest, UpdateDomainRequest,
 };
 use shared::error::{AppError, AppResult};
+use shared::finance::{FinanceService, PgFinanceService};
 use shared::forwarding::{
     ForwardingRuleConfig, ForwardingRuleService, PgForwardingRuleService,
     UpsertForwardingRuleRequest,
@@ -56,6 +58,7 @@ pub struct ApiState {
     pub outbound: Arc<dyn OutboundService>,
     pub forwarding: Arc<dyn ForwardingRuleService>,
     pub app_authorizations: Arc<dyn AppAuthorizationService>,
+    pub finance: Arc<dyn FinanceService>,
 }
 
 impl ApiState {
@@ -77,6 +80,7 @@ impl ApiState {
             config.mail.domain.clone(),
         ));
         let forwarding = Arc::new(PgForwardingRuleService::new(db.clone()));
+        let finance = Arc::new(PgFinanceService::new(db.clone()));
         let app_authorizations = Arc::new(
             AwsAppAuthorizationService::from_config(&config.app_authorizations, &config.cognito)
                 .await,
@@ -93,6 +97,7 @@ impl ApiState {
             outbound,
             forwarding,
             app_authorizations,
+            finance,
         })
     }
 }
@@ -155,6 +160,7 @@ pub fn router(state: ApiState) -> Router {
         )
         .merge(app_authorization_routes::router())
         .merge(calendar_routes::router())
+        .merge(finance_routes::router())
         .merge(forwarding_audit_routes::router())
         .layer(cors_layer())
         .with_state(state)
@@ -1206,6 +1212,75 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn finance_api_tracks_expenses_receivables_and_summary() {
+        let summary = authenticated_request("GET", "/finance/summary?tax_year=2026", None).await;
+        assert_eq!(summary.status(), StatusCode::OK);
+        let summary = response_json(summary).await;
+        assert_eq!(summary["business_expense_cents"], 9000);
+        assert_eq!(summary["receivable_owed_cents"], 25000);
+
+        let created_expense = authenticated_request(
+            "POST",
+            "/finance/expenses",
+            Some(json!({
+                "title": "AI tools",
+                "vendor_name": "OpenAI",
+                "category": "ai",
+                "expense_kind": "recurring",
+                "recurrence_interval": "monthly",
+                "amount_cents": 2000,
+                "incurred_on": "2026-06-01",
+                "business_use_percent_bps": 8000
+            })),
+        )
+        .await;
+        assert_eq!(created_expense.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(created_expense).await["vendor_name"],
+            "OpenAI"
+        );
+
+        let updated_expense = authenticated_request(
+            "PATCH",
+            "/finance/expenses/expense-1",
+            Some(json!({ "status": "ended" })),
+        )
+        .await;
+        assert_eq!(updated_expense.status(), StatusCode::OK);
+        assert_eq!(response_json(updated_expense).await["status"], "ended");
+
+        let created_receivable = authenticated_request(
+            "POST",
+            "/finance/receivables",
+            Some(json!({
+                "title": "Client session",
+                "amount_cents": 25000,
+                "contact_id": "contact-1",
+                "due_on": "2026-06-15",
+                "external_reference": "Venmo"
+            })),
+        )
+        .await;
+        assert_eq!(created_receivable.status(), StatusCode::OK);
+        assert_eq!(response_json(created_receivable).await["status"], "owed");
+    }
+
+    #[tokio::test]
+    async fn finance_api_routes_require_auth() {
+        let response = router(ApiState::for_tests())
+            .oneshot(
+                Request::builder()
+                    .uri("/finance/summary")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     async fn authenticated_request(

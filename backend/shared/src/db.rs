@@ -8,9 +8,13 @@ pub const MAIL_MODEL_MIGRATION: &str = concat!(
     "\n",
     include_str!("../../../db/migrations/002_attachments_retention_forwarding.sql"),
     "\n",
-    include_str!("../../../db/migrations/003_calendar_booking.sql")
+    include_str!("../../../db/migrations/003_calendar_booking.sql"),
+    "\n",
+    include_str!("../../../db/migrations/004_tax_audit_finance.sql")
 );
 pub const MAIL_MODEL_ROLLBACK: &str = concat!(
+    include_str!("../../../db/migrations/rollback/004_tax_audit_finance.sql"),
+    "\n",
     include_str!("../../../db/migrations/rollback/003_calendar_booking.sql"),
     "\n",
     include_str!("../../../db/migrations/rollback/002_attachments_retention_forwarding.sql"),

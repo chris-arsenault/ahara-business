@@ -208,6 +208,10 @@ fn mail_model_migration_seed_and_rollback_round_trip() {
         "outbound_work",
         "calendar_events",
         "bookings",
+        "finance_expenses",
+        "finance_expense_audit",
+        "finance_receivables",
+        "finance_receivable_audit",
     ] {
         assert!(
             table_exists(&container.name, table_name),
@@ -291,6 +295,10 @@ fn mail_model_migration_seed_and_rollback_round_trip() {
     for table_name in [
         "bookings",
         "calendar_events",
+        "finance_receivable_audit",
+        "finance_receivables",
+        "finance_expense_audit",
+        "finance_expenses",
         "outbound_work",
         "suppressions",
         "forwarding_rules",

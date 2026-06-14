@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ApiClient } from "./api";
+import { createApiClient } from "./api";
 
 type RecordedRequest = {
   url: string;
@@ -14,7 +14,7 @@ function jsonResponse(body: unknown) {
 
 function clientWithFetch() {
   const requests: RecordedRequest[] = [];
-  const client = new ApiClient({
+  const client = createApiClient({
     baseUrl: "https://api.mail.ahara.io",
     getAccessToken: () => "token-123",
     fetchImpl: async (input, init = {}) => {
@@ -76,7 +76,55 @@ describe("business API routes", () => {
       "https://api.mail.ahara.io/forwarding/audit/messages?limit=25",
     ]);
   });
+});
 
+describe("finance API routes", () => {
+  it("calls finance routes", async () => {
+    const { client, requests } = clientWithFetch();
+
+    await client.listFinanceExpenses({ tax_year: 2026, limit: 250 });
+    await client.createFinanceExpense({
+      title: "AI tools",
+      category: "ai",
+      amount_cents: 2000,
+      incurred_on: "2026-06-01",
+      business_use_percent_bps: 8000,
+    });
+    await client.updateFinanceExpense("expense-1", { status: "ended" });
+    await client.listFinanceReceivables({ status: "owed" });
+    await client.createFinanceReceivable({
+      title: "Client session",
+      amount_cents: 25000,
+    });
+    await client.updateFinanceReceivable("receivable-1", {
+      paid_on: "2026-06-15",
+      status: "paid",
+    });
+    await client.getFinanceSummary(2026);
+
+    expect(
+      requests.map((request) => [request.init.method ?? "GET", request.url]),
+    ).toEqual([
+      [
+        "GET",
+        "https://api.mail.ahara.io/finance/expenses?tax_year=2026&limit=250",
+      ],
+      ["POST", "https://api.mail.ahara.io/finance/expenses"],
+      ["PATCH", "https://api.mail.ahara.io/finance/expenses/expense-1"],
+      ["GET", "https://api.mail.ahara.io/finance/receivables?status=owed"],
+      ["POST", "https://api.mail.ahara.io/finance/receivables"],
+      ["PATCH", "https://api.mail.ahara.io/finance/receivables/receivable-1"],
+      ["GET", "https://api.mail.ahara.io/finance/summary?tax_year=2026"],
+    ]);
+    expect(bodyOf(requests[1])).toMatchObject({ title: "AI tools" });
+    expect(bodyOf(requests[5])).toEqual({
+      paid_on: "2026-06-15",
+      status: "paid",
+    });
+  });
+});
+
+describe("calendar query API routes", () => {
   it("calls calendar event range queries", async () => {
     const { client, requests } = clientWithFetch();
 
@@ -90,7 +138,9 @@ describe("business API routes", () => {
       "https://api.mail.ahara.io/calendar/events?starts_from=2026-06-14T00%3A00%3A00Z&starts_to=2026-06-21T00%3A00%3A00Z&limit=250",
     );
   });
+});
 
+describe("app authorization API routes", () => {
   it("calls app authorization routes", async () => {
     const { client, requests } = clientWithFetch();
     const temporaryPassword = ["Temporary", "Pass", "123"].join("");

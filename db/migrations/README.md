@@ -7,6 +7,7 @@ workers: domains, accepted addresses, contacts, threads, messages, recipients,
 attachment refs, forwarding rules, suppressions, and outbound work. The
 `002_attachments_retention_forwarding.sql` migration extends attachment,
 retention, and forwarding controls. `003_calendar_booking.sql` adds internal
-calendar events and booking records. The `rollback/` directory contains the
-matching rollbacks, and `seed/` contains the idempotent initial `ahara.io`
-routing seed.
+calendar events and booking records. `004_tax_audit_finance.sql` adds
+tax/audit expense allocation and manual client receivable tracking. The
+`rollback/` directory contains the matching rollbacks, and `seed/` contains the
+idempotent initial `ahara.io` routing seed.

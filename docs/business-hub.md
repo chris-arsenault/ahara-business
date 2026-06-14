@@ -38,7 +38,8 @@ The core loop is:
 - Forwarding and routing keep mail flowing to the right external destinations
   while preserving auditable internal state.
 - Calendar and booking records turn scheduling mail into operator-visible work.
-- Basic finance records track money in and money out against contacts,
+- Tax/audit finance records track business versus personal allocation for
+  ongoing expenses and manual client owed/paid status against contacts,
   bookings, messages, and files.
 - Contact activity ties the thread together so the operator can answer "what is
   happening with this person or project?" without hunting across surfaces.
@@ -123,35 +124,38 @@ Next behavior:
 Forwarding should stay tied to the outbound queue and suppression model rather
 than becoming an untracked mail relay.
 
-## Basic Finance In/Out
+## Tax/Audit Finance
 
-Finance should start as lightweight money tracking, not a full accounting
-system. The goal is to know what money is expected, what came in, what went
-out, and which contact, booking, message, or file explains it.
+Finance is lightweight tax/audit support, not a payment or accounting system.
+The goal is to know which ongoing expenses exist, what portion is business use,
+which client amounts are owed or paid, and which contact, booking, message, or
+file explains each row.
 
 Core records:
 
-- `invoice`: money expected from a contact or project, with due date, status,
-  line summary, notes, and source links.
-- `payment`: money received, linked to an invoice when applicable, with amount,
-  date, method, reference, and status.
-- `expense`: money paid out, with vendor/contact, category, date, amount,
-  receipt/source message links, and reimbursement/tax notes.
-- `ledger_event`: normalized in/out event used for reporting and activity
-  timelines.
+- `finance_expense`: cloud, AI, internet, software, equipment, contractor, and
+  other costs with vendor, category, date, recurrence, amount, business-use
+  percentage, receipt/source links, and notes.
+- `finance_expense_audit`: database-enforced snapshots of expense inserts and
+  updates for tax/audit explanation.
+- `finance_receivable`: client owed/paid status with amount, due/paid dates,
+  contact links, source links, external reference, and notes.
+- `finance_receivable_audit`: database-enforced snapshots of receivable inserts
+  and updates.
 
 Expected behavior:
 
-- Create invoices, payments, and expenses manually from the operator UI.
-- Start finance records from mailbox messages, such as invoice emails,
-  receipts, payment confirmations, and booking discussions.
-- Link finance rows to contacts, messages, bookings, files, and notes.
-- Show simple in/out totals by period, status, contact, and category.
-- Track unpaid, overdue, paid, void, reimbursable, and reconciled states.
-- Attach or reference receipt/invoice files without making mail raw MIME the
-  finance document store.
-- Defer bank feeds, payment processing, tax filing, and double-entry accounting
-  until the basic in/out workflow is proven.
+- Create and update expenses manually from the operator UI.
+- Assign business-use percentages so gross, business, and personal portions are
+  visible for a tax year.
+- Track manual client receivables as owed, partially paid, paid, void, or
+  written off.
+- Link finance rows to contacts, messages, bookings, files, and notes over
+  time.
+- Show tax-year totals by gross expense, deductible business portion, personal
+  portion, category, vendor, client owed, and client paid.
+- Keep payment processing, payment credentials, checkout links, bank feeds, tax
+  filing, and double-entry accounting out of this app.
 
 ## Build State
 
@@ -172,6 +176,9 @@ The shared backend and first operator surface are in place:
 - Ahara Business owns the operator app-authorization surface, edits
   `ahara-business-app-authorizations`, reconciles shared Cognito users, and
   seeds `chris` with the same app roles formerly managed by Ahara Portal.
+- Ahara Business stores tax/audit finance expenses with business-use
+  allocation, client owed/paid receivables, database audit snapshots, tax-year
+  summary APIs, and the first operator Finance view.
 
 Next build slices:
 
@@ -179,8 +186,8 @@ Next build slices:
   slices.
 - Add forwarding match explanations, skipped/suppressed status, and thread or
   mailbox-adjacent forwarding indicators.
-- Add lightweight finance tables and operator views for invoices, payments,
-  expenses, and period totals.
+- Add finance CSV export, receipt/source shortcuts, and contact/project
+  filtering.
 - Link contacts and messages to calendar, forwarding, and finance records.
 - Add authorization audit/history and app catalog metadata when the static role
   list becomes too small.
@@ -197,7 +204,8 @@ Planned workflow objects:
 - Calendar events from ICS parsing and manual operator entry.
 - Bookings, availability windows, confirmations, cancellations, and session
   notes.
-- Invoices, payments, expenses, and lightweight ledger entries.
+- Tax/audit expenses, allocation summaries, client receivables, and audit
+  snapshots.
 - Mentee account links from contacts to shared Cognito principals.
 - Object grants delegated to the shared access service.
 - Cross-record activity timeline for a contact, including mail, files,

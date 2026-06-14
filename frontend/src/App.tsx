@@ -8,9 +8,11 @@ import {
   LogIn,
   LogOut,
   Mail,
+  ReceiptText,
   Route,
   ShieldCheck,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { WorkspaceView, type ActiveView, type AppApi } from "./appWorkspace";
@@ -23,6 +25,23 @@ type AppProps = Partial<{
   authClient: AuthClient;
   apiClient: AppApi;
 }>;
+
+type NavItem = {
+  icon: LucideIcon;
+  label: string;
+  view: ActiveView;
+};
+
+const navItems: NavItem[] = [
+  { icon: Mail, label: "Mailbox", view: "mailbox" },
+  { icon: Users, label: "Contacts", view: "contacts" },
+  { icon: FolderLock, label: "Files", view: "files" },
+  { icon: ShieldCheck, label: "Authorizations", view: "authorizations" },
+  { icon: CalendarDays, label: "Calendar", view: "calendar" },
+  { icon: ReceiptText, label: "Finance", view: "finance" },
+  { icon: Route, label: "Routing", view: "routing" },
+  { icon: Forward, label: "Forwarding", view: "forwarding" },
+];
 
 export function App({ authClient: injectedAuth, apiClient }: AppProps) {
   const authClient = useMemo(
@@ -100,69 +119,14 @@ export function App({ authClient: injectedAuth, apiClient }: AppProps) {
           <span>{config.productName}</span>
         </div>
         <nav className="app-nav">
-          <button
-            className="nav-button"
-            data-active={activeView === "mailbox"}
-            type="button"
-            onClick={() => setActiveView("mailbox")}
-          >
-            <Mail aria-hidden="true" size={17} />
-            Mailbox
-          </button>
-          <button
-            className="nav-button"
-            data-active={activeView === "contacts"}
-            type="button"
-            onClick={() => setActiveView("contacts")}
-          >
-            <Users aria-hidden="true" size={17} />
-            Contacts
-          </button>
-          <button
-            className="nav-button"
-            data-active={activeView === "files"}
-            type="button"
-            onClick={() => setActiveView("files")}
-          >
-            <FolderLock aria-hidden="true" size={17} />
-            Files
-          </button>
-          <button
-            className="nav-button"
-            data-active={activeView === "authorizations"}
-            type="button"
-            onClick={() => setActiveView("authorizations")}
-          >
-            <ShieldCheck aria-hidden="true" size={17} />
-            Authorizations
-          </button>
-          <button
-            className="nav-button"
-            data-active={activeView === "calendar"}
-            type="button"
-            onClick={() => setActiveView("calendar")}
-          >
-            <CalendarDays aria-hidden="true" size={17} />
-            Calendar
-          </button>
-          <button
-            className="nav-button"
-            data-active={activeView === "routing"}
-            type="button"
-            onClick={() => setActiveView("routing")}
-          >
-            <Route aria-hidden="true" size={17} />
-            Routing
-          </button>
-          <button
-            className="nav-button"
-            data-active={activeView === "forwarding"}
-            type="button"
-            onClick={() => setActiveView("forwarding")}
-          >
-            <Forward aria-hidden="true" size={17} />
-            Forwarding
-          </button>
+          {navItems.map((item) => (
+            <NavButton
+              key={item.view}
+              active={activeView === item.view}
+              item={item}
+              onSelect={setActiveView}
+            />
+          ))}
         </nav>
         <div className="account-strip">
           <span>
@@ -183,6 +147,29 @@ export function App({ authClient: injectedAuth, apiClient }: AppProps) {
         <WorkspaceView activeView={activeView} apiClient={appApiClient} />
       </section>
     </main>
+  );
+}
+
+function NavButton({
+  active,
+  item,
+  onSelect,
+}: {
+  active: boolean;
+  item: NavItem;
+  onSelect: (view: ActiveView) => void;
+}) {
+  const Icon = item.icon;
+  return (
+    <button
+      className="nav-button"
+      data-active={active}
+      type="button"
+      onClick={() => onSelect(item.view)}
+    >
+      <Icon aria-hidden="true" size={17} />
+      {item.label}
+    </button>
   );
 }
 

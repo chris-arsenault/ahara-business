@@ -8,6 +8,7 @@ import {
   CalendarBookingView,
   type CalendarBookingApi,
 } from "./calendarBooking";
+import { FinanceView, type FinanceApi } from "./finance";
 import { ForwardingAuditView } from "./forwardingAudit";
 import {
   isForwardingAuditApi,
@@ -23,6 +24,7 @@ export type ActiveView =
   | "contacts"
   | "authorizations"
   | "calendar"
+  | "finance"
   | "routing"
   | "forwarding"
   | "files";
@@ -31,6 +33,7 @@ export type AppApi = MailboxApi &
     RoutingAdminApi &
       SharedFilesApi &
       CalendarBookingApi &
+      FinanceApi &
       ForwardingAuditApi &
       AppAuthorizationsApi
   >;
@@ -68,6 +71,8 @@ function viewFor(activeView: ActiveView, apiClient: AppApi): ReactNode | null {
       isSharedFilesApi(apiClient) ? (
         <SharedFilesView apiClient={apiClient} />
       ) : null,
+    finance: () =>
+      isFinanceApi(apiClient) ? <FinanceView apiClient={apiClient} /> : null,
     forwarding: () =>
       isForwardingAuditApi(apiClient) ? (
         <ForwardingAuditView apiClient={apiClient} />
@@ -79,6 +84,19 @@ function viewFor(activeView: ActiveView, apiClient: AppApi): ReactNode | null {
       ) : null,
   };
   return views[activeView]();
+}
+
+function isFinanceApi(apiClient: Partial<FinanceApi>): apiClient is FinanceApi {
+  return Boolean(
+    apiClient.listFinanceExpenses &&
+    apiClient.createFinanceExpense &&
+    apiClient.updateFinanceExpense &&
+    apiClient.listFinanceReceivables &&
+    apiClient.createFinanceReceivable &&
+    apiClient.updateFinanceReceivable &&
+    apiClient.getFinanceSummary &&
+    apiClient.listContacts,
+  );
 }
 
 function isCalendarBookingApi(
