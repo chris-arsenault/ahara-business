@@ -73,7 +73,8 @@ fn feedback_operational_metric_payload(
 mod tests {
     use serde_json::json;
     use shared::config::{
-        ApiConfig, AppConfig, CognitoConfig, DatabaseConfig, FeedbackConfig, MailConfig,
+        ApiConfig, AppAuthorizationConfig, AppConfig, CognitoConfig, DatabaseConfig,
+        FeedbackConfig, MailConfig,
     };
     use shared::feedback::InMemoryFeedbackService;
 
@@ -106,6 +107,9 @@ mod tests {
                 client_id: "client-123".to_string(),
                 domain: "auth.example.test".to_string(),
                 issuer: "https://issuer.example.test".to_string(),
+            },
+            app_authorizations: AppAuthorizationConfig {
+                table_name: "ahara-business-app-authorizations".to_string(),
             },
         }
     }

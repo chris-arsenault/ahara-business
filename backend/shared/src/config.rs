@@ -7,6 +7,7 @@ pub struct AppConfig {
     pub feedback: FeedbackConfig,
     pub api: ApiConfig,
     pub cognito: CognitoConfig,
+    pub app_authorizations: AppAuthorizationConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +44,11 @@ pub struct CognitoConfig {
     pub client_id: String,
     pub domain: String,
     pub issuer: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppAuthorizationConfig {
+    pub table_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,6 +115,9 @@ impl AppConfig {
                 domain: required_value(&lookup, "COGNITO_DOMAIN")?,
                 issuer: required_value(&lookup, "COGNITO_ISSUER")?,
             },
+            app_authorizations: AppAuthorizationConfig {
+                table_name: required_value(&lookup, "APP_AUTHORIZATIONS_TABLE_NAME")?,
+            },
         })
     }
 }
@@ -172,6 +181,10 @@ mod tests {
                 "COGNITO_ISSUER",
                 "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_pool".to_string(),
             ),
+            (
+                "APP_AUTHORIZATIONS_TABLE_NAME",
+                "ahara-business-app-authorizations".to_string(),
+            ),
         ])
     }
 
@@ -196,6 +209,10 @@ mod tests {
         assert_eq!(config.api.api_base_url, "https://api.example.test");
         assert_eq!(config.cognito.user_pool_id, "us-east-1_pool");
         assert_eq!(config.cognito.client_id, "client-123");
+        assert_eq!(
+            config.app_authorizations.table_name,
+            "ahara-business-app-authorizations"
+        );
     }
 
     #[test]

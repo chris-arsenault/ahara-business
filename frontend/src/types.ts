@@ -108,6 +108,21 @@ export type UpdateContactRequest = Partial<{
   notes: string;
 }>;
 
+export type AppAuthorizationUser = {
+  username: string;
+  email: string | null;
+  display_name: string | null;
+  apps: Record<string, string>;
+};
+
+export type UpsertAppAuthorizationUserRequest = {
+  apps: Record<string, string>;
+} & Partial<{
+  password: string | null;
+  email: string | null;
+  display_name: string | null;
+}>;
+
 export type RoutingPolicy = "allowlist" | "catchall";
 
 export type DomainConfig = {
@@ -246,3 +261,140 @@ export type UpsertForwardingRuleRequest = {
   plus_tag: string | null;
   require_auth_pass: boolean;
 }>;
+
+export type CalendarEventStatus =
+  | "tentative"
+  | "confirmed"
+  | "canceled"
+  | "completed"
+  | "missed";
+export type BookingStatus =
+  | "requested"
+  | "confirmed"
+  | "canceled"
+  | "completed"
+  | "missed";
+
+export type CalendarEvent = {
+  id: string;
+  title: string;
+  status: CalendarEventStatus;
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  location: string;
+  description: string;
+  contact_id: string | null;
+  source_message_id: string | null;
+  source_attachment_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Booking = {
+  id: string;
+  calendar_event_id: string | null;
+  contact_id: string | null;
+  title: string;
+  status: BookingStatus;
+  starts_at: string;
+  ends_at: string;
+  location: string;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+};
+export type IcsCandidate = {
+  message_id: string;
+  attachment_id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number | null;
+  subject: string;
+  from_address: string;
+  received_at: string | null;
+  contact_id: string | null;
+  suggested_title: string | null;
+  suggested_starts_at: string | null;
+  suggested_ends_at: string | null;
+  suggested_timezone: string | null;
+  suggested_location: string | null;
+  suggested_description: string | null;
+  suggested_status: CalendarEventStatus | null;
+  parse_error: string | null;
+};
+
+export type CreateCalendarEventRequest = {
+  title: string;
+  starts_at: string;
+  ends_at: string;
+} & Partial<{
+  timezone: string | null;
+  location: string | null;
+  description: string | null;
+  contact_id: string | null;
+  source_message_id: string | null;
+  source_attachment_id: string | null;
+  status: CalendarEventStatus;
+}>;
+
+export type UpdateCalendarEventRequest = Partial<
+  Omit<CreateCalendarEventRequest, "title" | "starts_at" | "ends_at"> & {
+    title: string;
+    starts_at: string;
+    ends_at: string;
+  }
+>;
+
+export type CreateBookingRequest = {
+  title: string;
+  starts_at: string;
+  ends_at: string;
+} & Partial<{
+  calendar_event_id: string | null;
+  contact_id: string | null;
+  location: string | null;
+  notes: string | null;
+  status: BookingStatus;
+}>;
+
+export type UpdateBookingRequest = Partial<
+  Omit<CreateBookingRequest, "title" | "starts_at" | "ends_at"> & {
+    title: string;
+    starts_at: string;
+    ends_at: string;
+  }
+>;
+
+export type ForwardingRuleStatus = {
+  rule_id: string;
+  rule_kind: string;
+  domain_name: string;
+  local_part: string | null;
+  target_address: string;
+  active: boolean;
+  queued_count: number;
+  sending_count: number;
+  sent_count: number;
+  failed_count: number;
+  bounced_count: number;
+  complained_count: number;
+  last_attempt_at: string | null;
+  last_error: string | null;
+};
+
+export type ForwardingMessageStatus = {
+  source_message_id: string;
+  thread_id: string | null;
+  subject: string;
+  from_address: string;
+  received_at: string | null;
+  matching_rule_count: number;
+  queued_count: number;
+  sending_count: number;
+  sent_count: number;
+  failed_count: number;
+  bounced_count: number;
+  complained_count: number;
+  last_error: string | null;
+};

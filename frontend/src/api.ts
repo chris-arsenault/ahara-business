@@ -8,11 +8,20 @@ import {
 } from "./apiCore";
 import type {
   AcceptedAddress,
+  AppAuthorizationUser,
+  Booking,
   ComposeMessageRequest,
   Contact,
+  CalendarEvent,
+  CalendarEventStatus,
+  CreateBookingRequest,
+  CreateCalendarEventRequest,
   CreateContactRequest,
   DomainConfig,
+  ForwardingMessageStatus,
   ForwardingRule,
+  ForwardingRuleStatus,
+  IcsCandidate,
   MailboxAttachmentDownload,
   MailboxMessageDetail,
   MailboxMessageSummary,
@@ -21,8 +30,11 @@ import type {
   OutboundMessageQueued,
   OutboundMessageSummary,
   ReplyMessageRequest,
+  UpdateBookingRequest,
+  UpdateCalendarEventRequest,
   UpdateContactRequest,
   UpdateAddressRequest,
+  UpsertAppAuthorizationUserRequest,
   UpdateDomainRequest,
   UpsertForwardingRuleRequest,
 } from "./types";
@@ -30,6 +42,14 @@ import type {
 type MailboxListQuery = Partial<{
   limit: number;
   unread_only: boolean;
+}>;
+
+type CalendarEventListQuery = Partial<{
+  contact_id: string;
+  status: CalendarEventStatus;
+  starts_from: string;
+  starts_to: string;
+  limit: number;
 }>;
 
 export { ApiClientError };
@@ -121,6 +141,30 @@ export class ApiClient {
       method: "PATCH",
       body: request,
     });
+  }
+
+  listAppAuthorizationUsers() {
+    return this.request<AppAuthorizationUser[]>("/app-authorizations/users");
+  }
+
+  upsertAppAuthorizationUser(
+    username: string,
+    request: UpsertAppAuthorizationUserRequest,
+  ) {
+    return this.request<AppAuthorizationUser>(
+      `/app-authorizations/users/${encodeURIComponent(username)}`,
+      {
+        method: "PUT",
+        body: request,
+      },
+    );
+  }
+
+  deleteAppAuthorizationUser(username: string) {
+    return this.request<void>(
+      `/app-authorizations/users/${encodeURIComponent(username)}`,
+      { method: "DELETE" },
+    );
   }
 
   listDomains() {
@@ -215,6 +259,78 @@ export class ApiClient {
       `/forwarding/rules/${encodeURIComponent(ruleId)}`,
       { method: "DELETE" },
     );
+  }
+
+  listForwardingRuleStatuses() {
+    return this.request<ForwardingRuleStatus[]>("/forwarding/audit/rules");
+  }
+
+  listForwardingMessageStatuses(limit?: number) {
+    const params = new URLSearchParams();
+    if (limit !== undefined) {
+      params.set("limit", String(limit));
+    }
+    return this.request<ForwardingMessageStatus[]>(
+      `/forwarding/audit/messages${queryString(params)}`,
+    );
+  }
+
+  listCalendarEvents(query: CalendarEventListQuery = {}) {
+    const params = new URLSearchParams();
+    if (query.contact_id) {
+      params.set("contact_id", query.contact_id);
+    }
+    if (query.status) {
+      params.set("status", query.status);
+    }
+    if (query.starts_from) {
+      params.set("starts_from", query.starts_from);
+    }
+    if (query.starts_to) {
+      params.set("starts_to", query.starts_to);
+    }
+    if (query.limit !== undefined) {
+      params.set("limit", String(query.limit));
+    }
+    return this.request<CalendarEvent[]>(
+      `/calendar/events${queryString(params)}`,
+    );
+  }
+
+  createCalendarEvent(request: CreateCalendarEventRequest) {
+    return this.request<CalendarEvent>("/calendar/events", {
+      method: "POST",
+      body: request,
+    });
+  }
+
+  updateCalendarEvent(eventId: string, request: UpdateCalendarEventRequest) {
+    return this.request<CalendarEvent>(
+      `/calendar/events/${encodeURIComponent(eventId)}`,
+      { method: "PATCH", body: request },
+    );
+  }
+
+  listCalendarIcsCandidates() {
+    return this.request<IcsCandidate[]>("/calendar/ics-candidates");
+  }
+
+  listBookings() {
+    return this.request<Booking[]>("/bookings");
+  }
+
+  createBooking(request: CreateBookingRequest) {
+    return this.request<Booking>("/bookings", {
+      method: "POST",
+      body: request,
+    });
+  }
+
+  updateBooking(bookingId: string, request: UpdateBookingRequest) {
+    return this.request<Booking>(`/bookings/${encodeURIComponent(bookingId)}`, {
+      method: "PATCH",
+      body: request,
+    });
   }
 
   private async request<T>(

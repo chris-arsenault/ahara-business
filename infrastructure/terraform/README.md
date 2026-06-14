@@ -13,6 +13,7 @@ Current modules:
 | ---- | ---- |
 | `cognito.tf` | Shared Cognito app client |
 | `frontend.tf` | Website module for the SPA bundle and runtime config |
+| `app_authorizations.tf` | Seeded platform app-authorization item for the operator account |
 | `lambdas.tf` | Platform context, ALB API Lambda, and standalone worker Lambdas |
 | `mail_alarms.tf` | SES reputation, Lambda volume, and raw-mail bucket alarms |
 | `mail_data.tf` | Account context for globally unique mail resource names |

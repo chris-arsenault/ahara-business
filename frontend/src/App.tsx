@@ -2,11 +2,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   AlertCircle,
+  CalendarDays,
   FolderLock,
+  Forward,
   LogIn,
   LogOut,
   Mail,
   Route,
+  ShieldCheck,
   Users,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
@@ -126,12 +129,39 @@ export function App({ authClient: injectedAuth, apiClient }: AppProps) {
           </button>
           <button
             className="nav-button"
+            data-active={activeView === "authorizations"}
+            type="button"
+            onClick={() => setActiveView("authorizations")}
+          >
+            <ShieldCheck aria-hidden="true" size={17} />
+            Authorizations
+          </button>
+          <button
+            className="nav-button"
+            data-active={activeView === "calendar"}
+            type="button"
+            onClick={() => setActiveView("calendar")}
+          >
+            <CalendarDays aria-hidden="true" size={17} />
+            Calendar
+          </button>
+          <button
+            className="nav-button"
             data-active={activeView === "routing"}
             type="button"
             onClick={() => setActiveView("routing")}
           >
             <Route aria-hidden="true" size={17} />
             Routing
+          </button>
+          <button
+            className="nav-button"
+            data-active={activeView === "forwarding"}
+            type="button"
+            onClick={() => setActiveView("forwarding")}
+          >
+            <Forward aria-hidden="true" size={17} />
+            Forwarding
           </button>
         </nav>
         <div className="account-strip">

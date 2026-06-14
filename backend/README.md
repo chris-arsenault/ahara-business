@@ -6,8 +6,8 @@ Rust Lambda workspace for Ahara Mail.
 
 | Member | Purpose |
 | ---- | ---- |
-| `shared` | Shared mail, auth, database, routing, inbound, outbound, feedback, and observability logic |
-| `api` | Axum/lambda_http API Lambda for health, user context, domains, contacts, mailbox, outbound, and forwarding routes |
+| `shared` | Shared mail, auth, app authorization, database, routing, inbound, outbound, feedback, and observability logic |
+| `api` | Axum/lambda_http API Lambda for health, user context, domains, contacts, mailbox, outbound, forwarding, and app-authorization routes |
 | `receipt-gate` | SES synchronous receipt Lambda for accepted-recipient checks and count-based flood control |
 | `ingest` | SES async ingest Lambda for raw MIME fetch, parsing, security disposition, persistence, and forwarding enqueue |
 | `send-worker` | Scheduled outbound worker for SES send, retry, suppression checks, and status updates |

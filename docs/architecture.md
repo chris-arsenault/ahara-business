@@ -15,8 +15,8 @@ requirements live in [../mail-foundation-spec.md](../mail-foundation-spec.md).
 
 | Component | Runtime | Purpose |
 | ---- | ---- | ---- |
-| Frontend | Vite React + TypeScript on the platform website module | Authenticated mailbox, sent mail, contacts, routing, forwarding, and MFA flows |
-| API | Rust Lambda behind the shared ALB | Authenticated JSON API for mailbox, contacts, domains, forwarding, outbound mail, and `/health` |
+| Frontend | Vite React + TypeScript on the platform website module | Authenticated mailbox, sent mail, contacts, routing, forwarding, authorizations, and MFA flows |
+| API | Rust Lambda behind the shared ALB | Authenticated JSON API for mailbox, contacts, domains, forwarding, app authorizations, outbound mail, and `/health` |
 | Receipt gate | Rust Lambda invoked synchronously by SES | Stops unknown recipients and count floods before S3 storage |
 | Ingest worker | Rust Lambda invoked asynchronously by SES | Fetches raw MIME, applies limits/security policy, persists mailbox rows, and enqueues forwarding work |
 | Send worker | Rust Lambda invoked by EventBridge every minute | Claims outbound work, sends through SES, retries transient failures, and records final status |
@@ -24,6 +24,7 @@ requirements live in [../mail-foundation-spec.md](../mail-foundation-spec.md).
 | Database | Shared PostgreSQL through the platform migration flow | Domains, addresses, contacts, messages, recipients, attachment refs, threads, forwarding rules, suppressions, and outbound work |
 | Raw mail storage | Private project S3 bucket | Raw MIME retention under the `raw/` prefix with public access blocked and lifecycle controls |
 | Auth | Shared Cognito app client | Public authenticated app access with TOTP setup and token validation |
+| App authorization store | Platform-created DynamoDB table edited by this app | Username-to-app role records read by the platform Cognito pre-auth trigger |
 | Terraform | Project-owned root | Frontend, API, Lambdas, SES identity/rules, raw-mail storage, SNS feedback, alarms, and DNS records |
 
 ## Mail Flow
@@ -55,8 +56,11 @@ Quarantined or rejected mail is excluded from normal mailbox reads.
 
 The shared ALB validates Cognito tokens on authenticated API routes, and the API
 also verifies Cognito access tokens before serving app data. `/health` is the
-only unauthenticated API route. Mail logs and operational metrics omit message
-bodies, full headers, and raw email addresses.
+only unauthenticated API route. Ahara Business owns the operator surface for
+platform app authorizations: it edits the `ahara-business-app-authorizations`
+table and reconciles shared Cognito users. The platform-owned pre-auth trigger
+continues to enforce those records before app login. Mail logs and operational
+metrics omit message bodies, full headers, and raw email addresses.
 
 ## Operational Controls
 
@@ -75,8 +79,10 @@ tested outside Lambda glue. Lambda crates own handler setup and AWS integration.
 
 Frontend code reads `window.__APP_CONFIG__` from the deployed website runtime
 config, stores Cognito session state in the browser through the Cognito client,
-and uses the typed API client in `frontend/src/api.ts` for all app data.
+and uses the typed API client in `frontend/src/api.ts` for all app data and
+operator app-authorization changes.
 
 Terraform remains under `infrastructure/terraform/` and owns project mail
-resources while reusing shared platform modules for website hosting, ALB API,
-Cognito app-client creation, Lambda deployment, VPC discovery, and state.
+resources and the seeded operator authorization item while reusing shared
+platform modules for website hosting, ALB API, Cognito app-client creation,
+Lambda deployment, VPC discovery, and state.

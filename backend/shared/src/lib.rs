@@ -1,5 +1,10 @@
+pub mod app_authorizations;
 pub mod attachments;
 pub mod auth;
+pub mod calendar;
+mod calendar_ics;
+mod calendar_model;
+mod calendar_types;
 pub mod config;
 pub mod contacts;
 pub mod db;
@@ -7,6 +12,7 @@ pub mod domain_config;
 pub mod error;
 pub mod feedback;
 pub mod forwarding;
+pub mod forwarding_audit;
 pub mod inbound;
 pub mod mail_security;
 pub mod mailbox;

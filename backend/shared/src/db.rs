@@ -6,9 +6,13 @@ use crate::error::{AppError, AppResult};
 pub const MAIL_MODEL_MIGRATION: &str = concat!(
     include_str!("../../../db/migrations/001_create_mail_model.sql"),
     "\n",
-    include_str!("../../../db/migrations/002_attachments_retention_forwarding.sql")
+    include_str!("../../../db/migrations/002_attachments_retention_forwarding.sql"),
+    "\n",
+    include_str!("../../../db/migrations/003_calendar_booking.sql")
 );
 pub const MAIL_MODEL_ROLLBACK: &str = concat!(
+    include_str!("../../../db/migrations/rollback/003_calendar_booking.sql"),
+    "\n",
     include_str!("../../../db/migrations/rollback/002_attachments_retention_forwarding.sql"),
     "\n",
     include_str!("../../../db/migrations/rollback/001_create_mail_model.sql")

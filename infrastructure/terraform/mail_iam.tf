@@ -35,4 +35,33 @@ data "aws_iam_policy_document" "lambda_mail" {
     ]
     resources = [aws_ses_domain_identity.mail.arn]
   }
+
+  statement {
+    sid    = "ManageAppAuthorizationRecords"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:DeleteItem",
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:Scan",
+    ]
+    resources = [
+      "arn:aws:dynamodb:*:${data.aws_caller_identity.current.account_id}:table/${local.app_authorizations_table_name}",
+    ]
+  }
+
+  statement {
+    sid    = "ReconcileAppAuthorizationCognitoUsers"
+    effect = "Allow"
+
+    actions = [
+      "cognito-idp:AdminCreateUser",
+      "cognito-idp:AdminDisableUser",
+      "cognito-idp:AdminEnableUser",
+      "cognito-idp:AdminGetUser",
+      "cognito-idp:AdminSetUserPassword",
+    ]
+    resources = [module.ctx.cognito_user_pool_arn]
+  }
 }

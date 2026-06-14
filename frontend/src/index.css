@@ -1368,6 +1368,164 @@ button {
   border-top: 3px double var(--rule-strong);
 }
 
+/* ---------- Business operations ---------- */
+
+.business-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  border-bottom: 1px solid var(--rule-strong);
+  padding: 16px;
+}
+
+.business-grid.wide {
+  align-items: start;
+  border-bottom: 0;
+}
+
+.calendar-view-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+
+.calendar-view-controls button {
+  text-transform: capitalize;
+}
+
+.calendar-view-controls button[aria-pressed="true"] {
+  color: var(--spine-bright);
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.business-form,
+.business-list {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--paper);
+  padding: 12px;
+}
+
+.business-form h2,
+.business-list h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 560;
+}
+
+.business-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.business-list article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(70px, auto);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 8px;
+  background: var(--paper-strong);
+}
+
+.business-list article > * {
+  min-width: 0;
+}
+
+.business-list strong,
+.business-list span,
+.business-list small,
+.business-list em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.business-list small,
+.business-list em {
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-style: normal;
+}
+
+.business-list select {
+  width: 100%;
+}
+
+.inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.business-fieldset {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 10px;
+}
+
+.business-fieldset legend {
+  padding: 0 4px;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+}
+
+.app-auth-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(110px, 150px);
+  align-items: center;
+  gap: 8px;
+}
+
+.app-auth-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.status-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(48px, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.status-counts div {
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 5px 6px;
+}
+
+.status-counts dt,
+.status-counts dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+}
+
+.status-counts dd {
+  font-weight: 700;
+}
+
 /* ---------- Scrollbars ---------- */
 
 .thread-detail,
@@ -1427,7 +1585,9 @@ button {
 
   .forwarding-add-form,
   .forwarding-rule-list li,
-  .shared-object-list li {
+  .shared-object-list li,
+  .business-list article,
+  .status-counts {
     grid-template-columns: 1fr;
   }
 

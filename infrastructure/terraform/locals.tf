@@ -3,9 +3,10 @@ locals {
   domain_name  = "ahara.io"
   product_name = "Ahara Mail"
 
-  frontend_hostname = "mail.ahara.io"
-  api_hostname      = "api.mail.ahara.io"
-  access_api_url    = "https://api.access.ahara.io"
+  frontend_hostname             = "mail.ahara.io"
+  api_hostname                  = "api.mail.ahara.io"
+  access_api_url                = "https://api.access.ahara.io"
+  app_authorizations_table_name = "ahara-business-app-authorizations"
 
   mail_domain     = local.domain_name
   raw_mail_bucket = "${local.prefix}-raw-mail-${data.aws_caller_identity.current.account_id}"
@@ -82,17 +83,18 @@ locals {
   }
 
   common_env = merge(local.db_env, {
-    COGNITO_USER_POOL_ID    = module.ctx.cognito_user_pool_id
-    COGNITO_CLIENT_ID       = module.cognito_app.client_id
-    COGNITO_DOMAIN          = module.ctx.cognito_domain
-    COGNITO_ISSUER          = module.ctx.cognito_issuer
-    API_BASE_URL            = "https://${local.api_hostname}"
-    APP_BASE_URL            = "https://${local.frontend_hostname}"
-    MAIL_DOMAIN             = local.mail_domain
-    RAW_MAIL_BUCKET         = aws_s3_bucket.raw_mail.bucket
-    RAW_MAIL_PREFIX         = local.raw_mail_prefix
-    SES_BOUNCE_TOPIC_ARN    = aws_sns_topic.ses_bounces.arn
-    SES_COMPLAINT_TOPIC_ARN = aws_sns_topic.ses_complaints.arn
+    COGNITO_USER_POOL_ID          = module.ctx.cognito_user_pool_id
+    COGNITO_CLIENT_ID             = module.cognito_app.client_id
+    COGNITO_DOMAIN                = module.ctx.cognito_domain
+    COGNITO_ISSUER                = module.ctx.cognito_issuer
+    API_BASE_URL                  = "https://${local.api_hostname}"
+    APP_BASE_URL                  = "https://${local.frontend_hostname}"
+    MAIL_DOMAIN                   = local.mail_domain
+    RAW_MAIL_BUCKET               = aws_s3_bucket.raw_mail.bucket
+    RAW_MAIL_PREFIX               = local.raw_mail_prefix
+    SES_BOUNCE_TOPIC_ARN          = aws_sns_topic.ses_bounces.arn
+    SES_COMPLAINT_TOPIC_ARN       = aws_sns_topic.ses_complaints.arn
+    APP_AUTHORIZATIONS_TABLE_NAME = local.app_authorizations_table_name
   })
 
   receipt_gate_env = {

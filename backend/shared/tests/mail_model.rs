@@ -206,6 +206,8 @@ fn mail_model_migration_seed_and_rollback_round_trip() {
         "forwarding_rules",
         "suppressions",
         "outbound_work",
+        "calendar_events",
+        "bookings",
     ] {
         assert!(
             table_exists(&container.name, table_name),
@@ -226,6 +228,41 @@ fn mail_model_migration_seed_and_rollback_round_trip() {
         );
     }
     println!("messages table includes spam, virus, and security disposition fields");
+
+    run_psql(
+        &container.name,
+        "WITH contact_row AS (
+            INSERT INTO contacts (display_name)
+            VALUES ('Calendar Contact')
+            RETURNING id
+        ),
+        event_row AS (
+            INSERT INTO calendar_events (
+                title, status, starts_at, ends_at, contact_id
+            )
+            SELECT
+                'Intro call', 'confirmed',
+                '2026-06-13T14:00:00Z',
+                '2026-06-13T14:30:00Z',
+                id
+            FROM contact_row
+            RETURNING id, contact_id
+        )
+        INSERT INTO bookings (
+            calendar_event_id, contact_id, title, status, starts_at, ends_at
+        )
+        SELECT
+            id, contact_id, 'Intro booking', 'requested',
+            '2026-06-13T14:00:00Z',
+            '2026-06-13T14:30:00Z'
+        FROM event_row;",
+    );
+    assert_psql_fails(
+        &container.name,
+        "INSERT INTO calendar_events (title, starts_at, ends_at)
+         VALUES ('bad', '2026-06-13T15:00:00Z', '2026-06-13T14:00:00Z');",
+    );
+    println!("calendar and booking tables enforce linked operational events");
 
     run_psql(&container.name, INITIAL_ROUTING_SEED);
     run_psql(&container.name, INITIAL_ROUTING_SEED);
@@ -252,6 +289,8 @@ fn mail_model_migration_seed_and_rollback_round_trip() {
     run_psql(&container.name, MAIL_MODEL_ROLLBACK);
 
     for table_name in [
+        "bookings",
+        "calendar_events",
         "outbound_work",
         "suppressions",
         "forwarding_rules",

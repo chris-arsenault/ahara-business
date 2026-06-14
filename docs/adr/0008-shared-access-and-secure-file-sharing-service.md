@@ -50,8 +50,8 @@ access.
 Business Hub features in this repo can design for external visibility from the
 beginning without shipping public-facing workflows first. Tsonu Music can share
 pre-release files without weakening the public catalog boundary. Ahara Portal
-can remain the public recruiter-facing site and current user-administration
-surface while operator-only workflows move toward this repo over time. The
+remains the public recruiter-facing site, while platform app-authorization
+administration and other operator-only workflows live in Ahara Business. The
 shared access service owns object-level grants and audit behavior.
 
 The platform gains another service boundary. Product apps must define stable
