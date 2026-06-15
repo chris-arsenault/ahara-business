@@ -1,11 +1,12 @@
 use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
-use axum::routing::{get, patch};
+use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use shared::finance::{
-    CreateFinanceExpenseRequest, CreateFinanceReceivableRequest, FinanceExpense,
-    FinanceExpenseQuery, FinanceReceivable, FinanceReceivableQuery, FinanceSummary,
-    FinanceSummaryQuery, UpdateFinanceExpenseRequest, UpdateFinanceReceivableRequest,
+    CreateFinanceExpenseOccurrenceRequest, CreateFinanceExpenseRequest,
+    CreateFinanceReceivableRequest, FinanceExpense, FinanceExpenseQuery, FinanceReceivable,
+    FinanceReceivableQuery, FinanceSummary, FinanceSummaryQuery, UpdateFinanceExpenseRequest,
+    UpdateFinanceReceivableRequest,
 };
 
 use crate::{ApiError, ApiState, require_user};
@@ -14,6 +15,10 @@ pub fn router() -> Router<ApiState> {
     Router::new()
         .route("/finance/expenses", get(list_expenses).post(create_expense))
         .route("/finance/expenses/{expense_id}", patch(update_expense))
+        .route(
+            "/finance/expenses/{expense_id}/occurrences",
+            post(create_expense_occurrence),
+        )
         .route(
             "/finance/receivables",
             get(list_receivables).post(create_receivable),
@@ -52,6 +57,21 @@ async fn update_expense(
     require_user(&state, &headers).await?;
     Ok(Json(
         state.finance.update_expense(&expense_id, request).await?,
+    ))
+}
+
+async fn create_expense_occurrence(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Path(expense_id): Path<String>,
+    Json(request): Json<CreateFinanceExpenseOccurrenceRequest>,
+) -> Result<Json<FinanceExpense>, ApiError> {
+    require_user(&state, &headers).await?;
+    Ok(Json(
+        state
+            .finance
+            .create_expense_occurrence(&expense_id, request)
+            .await?,
     ))
 }
 

@@ -17,6 +17,8 @@ pub(crate) struct FinanceExpenseRow {
     pub(crate) category: String,
     pub(crate) expense_kind: String,
     pub(crate) recurrence_interval: String,
+    pub(crate) recurrence_parent_expense_id: Option<Uuid>,
+    pub(crate) recurrence_instance_on: Option<String>,
     pub(crate) status: String,
     pub(crate) amount_cents: i64,
     pub(crate) currency: String,
@@ -74,6 +76,8 @@ pub(crate) struct NormalizedExpenseInput {
     pub(crate) category: String,
     pub(crate) expense_kind: ExpenseKind,
     pub(crate) recurrence_interval: RecurrenceInterval,
+    pub(crate) recurrence_parent_expense_id: Option<Uuid>,
+    pub(crate) recurrence_instance_on: Option<String>,
     pub(crate) status: ExpenseStatus,
     pub(crate) amount_cents: i64,
     pub(crate) currency: String,
@@ -100,6 +104,8 @@ impl NormalizedExpenseInput {
             recurrence_interval: request
                 .recurrence_interval
                 .unwrap_or(RecurrenceInterval::None),
+            recurrence_parent_expense_id: None,
+            recurrence_instance_on: None,
             status: request.status.unwrap_or(ExpenseStatus::Active),
             amount_cents: validate_amount(request.amount_cents)?,
             currency: validate_currency(request.currency.as_deref().unwrap_or("USD"))?,
@@ -148,6 +154,8 @@ impl NormalizedExpenseInput {
             recurrence_interval: request
                 .recurrence_interval
                 .unwrap_or(RecurrenceInterval::parse(&current.recurrence_interval)?),
+            recurrence_parent_expense_id: current.recurrence_parent_expense_id,
+            recurrence_instance_on: current.recurrence_instance_on,
             status: request
                 .status
                 .unwrap_or(ExpenseStatus::parse(&current.status)?),
@@ -188,7 +196,7 @@ impl NormalizedExpenseInput {
         Ok(input)
     }
 
-    fn validate_period(&self) -> AppResult<()> {
+    pub(crate) fn validate_period(&self) -> AppResult<()> {
         validate_date_order(
             self.service_period_start.as_deref(),
             self.service_period_end.as_deref(),
@@ -315,22 +323,22 @@ pub(crate) fn parse_optional_uuid(value: Option<&str>, label: &str) -> AppResult
         .transpose()
 }
 
-fn required_text(label: &str, value: String) -> AppResult<String> {
+pub(crate) fn required_text(label: &str, value: String) -> AppResult<String> {
     optional_text(value).ok_or_else(|| AppError::Validation(format!("{label} is required")))
 }
 
-fn optional_text(value: String) -> Option<String> {
+pub(crate) fn optional_text(value: String) -> Option<String> {
     let value = value.trim().to_string();
     (!value.is_empty()).then_some(value)
 }
 
-fn validate_amount(value: i64) -> AppResult<i64> {
+pub(crate) fn validate_amount(value: i64) -> AppResult<i64> {
     (value > 0)
         .then_some(value)
         .ok_or_else(|| AppError::Validation("amount_cents must be positive".to_string()))
 }
 
-fn validate_bps(value: i32) -> AppResult<i32> {
+pub(crate) fn validate_bps(value: i32) -> AppResult<i32> {
     (0..=10000)
         .contains(&value)
         .then_some(value)
@@ -349,11 +357,11 @@ fn validate_currency(value: &str) -> AppResult<String> {
     ))
 }
 
-fn optional_date(value: Option<String>, label: &str) -> AppResult<Option<String>> {
+pub(crate) fn optional_date(value: Option<String>, label: &str) -> AppResult<Option<String>> {
     value.map(|value| validate_date(&value, label)).transpose()
 }
 
-fn validate_date(value: &str, label: &str) -> AppResult<String> {
+pub(crate) fn validate_date(value: &str, label: &str) -> AppResult<String> {
     parse_date(value, label)?;
     Ok(value.trim().to_string())
 }

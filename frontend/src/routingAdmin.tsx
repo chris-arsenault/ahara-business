@@ -2,8 +2,8 @@
 import { useEffect, useState } from "react";
 import { Plus, Power, PowerOff, ShieldCheck, Trash2 } from "lucide-react";
 import type {
+  DomainDraft,
   DomainConfig,
-  DraftForwarding,
   RetentionDrafts,
   RoutingAdminApi,
   RoutingState,
@@ -17,18 +17,17 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
   const [draftLocalParts, setDraftLocalParts] = useState<
     Record<string, string>
   >({});
-  const [draftForwarding, setDraftForwarding] = useState<DraftForwarding>({});
+  const [domainDraft, setDomainDraft] = useState<DomainDraft>({
+    domainName: "",
+    routingPolicy: "allowlist",
+  });
   const [retentionDrafts, setRetentionDrafts] = useState<RetentionDrafts>({});
   const [actionError, setActionError] = useState<string>();
 
   async function loadDomains() {
     setState({ status: "loading" });
     try {
-      const [domains, forwardingRules] = await Promise.all([
-        apiClient.listDomains(),
-        apiClient.listForwardingRules(),
-      ]);
-      setState({ status: "ready", domains, forwardingRules });
+      setState({ status: "ready", domains: await apiClient.listDomains() });
     } catch (error) {
       setState({
         status: "error",
@@ -79,299 +78,130 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
           {actionError}
         </div>
       ) : null}
-      <div className="domain-list">
-        {state.domains.map((domain) => (
-          <article className="domain-row" key={domain.domain_name}>
-            <header className="domain-header">
-              <div>
-                <h2>{domain.domain_name}</h2>
-                <span>{domain.active ? "Active" : "Inactive"}</span>
-              </div>
-              <button
-                className="icon-button"
-                type="button"
-                title={domain.active ? "Deactivate domain" : "Activate domain"}
-                aria-label={
-                  domain.active ? "Deactivate domain" : "Activate domain"
-                }
-                onClick={() =>
-                  void updateDomain(domain.domain_name, {
-                    active: !domain.active,
-                  })
-                }
-              >
-                {domain.active ? (
-                  <Power aria-hidden="true" size={17} />
-                ) : (
-                  <PowerOff aria-hidden="true" size={17} />
-                )}
-              </button>
-            </header>
-
-            <label className="field-control">
-              <span>Routing policy for {domain.domain_name}</span>
-              <select
-                value={domain.routing_policy}
-                onChange={(event) =>
-                  void updateDomain(domain.domain_name, {
-                    routing_policy: event.currentTarget
-                      .value as UpdateDomainRequest["routing_policy"],
-                  })
-                }
-              >
-                <option value="allowlist">allowlist</option>
-                <option value="catchall">catchall</option>
-              </select>
-            </label>
-
-            <div className="retention-controls">
-              <label className="field-control">
-                <span>Raw retention days</span>
-                <input
-                  inputMode="numeric"
-                  value={
-                    retentionDrafts[domain.domain_name] ??
-                    String(domain.raw_retention_days ?? "")
+      <DomainCreateForm
+        draft={domainDraft}
+        onChange={setDomainDraft}
+        onSubmit={createDomain}
+      />
+      {state.domains.length === 0 ? (
+        <div className="empty-state">No mail domains configured</div>
+      ) : (
+        <div className="domain-list">
+          {state.domains.map((domain) => (
+            <article className="domain-row" key={domain.domain_name}>
+              <header className="domain-header">
+                <div>
+                  <h2>{domain.domain_name}</h2>
+                  <span>{domain.active ? "Active" : "Inactive"}</span>
+                </div>
+                <button
+                  className="icon-button"
+                  type="button"
+                  title={
+                    domain.active ? "Deactivate domain" : "Activate domain"
                   }
+                  aria-label={
+                    domain.active ? "Deactivate domain" : "Activate domain"
+                  }
+                  onClick={() =>
+                    void updateDomain(domain.domain_name, {
+                      active: !domain.active,
+                    })
+                  }
+                >
+                  {domain.active ? (
+                    <Power aria-hidden="true" size={17} />
+                  ) : (
+                    <PowerOff aria-hidden="true" size={17} />
+                  )}
+                </button>
+              </header>
+
+              <label className="field-control">
+                <span>Accepted recipient policy for {domain.domain_name}</span>
+                <select
+                  value={domain.routing_policy}
                   onChange={(event) =>
-                    updateRetentionDraft(
-                      domain.domain_name,
-                      event.currentTarget.value,
-                    )
+                    void updateDomain(domain.domain_name, {
+                      routing_policy: event.currentTarget
+                        .value as UpdateDomainRequest["routing_policy"],
+                    })
                   }
-                />
+                >
+                  <option value="allowlist">Only listed addresses</option>
+                  <option value="catchall">Every address on domain</option>
+                </select>
               </label>
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => void updateDomainRetention(domain.domain_name)}
-              >
-                Save retention
-              </button>
-            </div>
 
-            <form
-              className="address-add-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void addAddress(domain.domain_name);
-              }}
-            >
-              <label className="field-control">
-                <span>Add address for {domain.domain_name}</span>
-                <input
-                  value={draftLocalParts[domain.domain_name] ?? ""}
-                  onChange={(event) => {
-                    const value = event.currentTarget.value;
-                    setDraftLocalParts((current) => ({
-                      ...current,
-                      [domain.domain_name]: value,
-                    }));
-                  }}
-                />
-              </label>
-              <button className="secondary-button" type="submit">
-                <Plus aria-hidden="true" size={15} />
-                Add address
-              </button>
-            </form>
-
-            <ul
-              className="address-list"
-              aria-label={`Addresses for ${domain.domain_name}`}
-            >
-              {domain.addresses.map((address) => (
-                <li key={address.local_part}>
-                  <span>{address.local_part}</span>
-                  <label className="field-control compact-field">
-                    <span>Raw retention</span>
-                    <input
-                      aria-label={`Raw retention days for ${address.local_part}@${domain.domain_name}`}
-                      inputMode="numeric"
-                      value={
-                        retentionDrafts[
-                          addressRetentionKey(
-                            domain.domain_name,
-                            address.local_part,
-                          )
-                        ] ?? String(address.raw_retention_days ?? "")
-                      }
-                      onChange={(event) =>
-                        updateRetentionDraft(
-                          addressRetentionKey(
-                            domain.domain_name,
-                            address.local_part,
-                          ),
-                          event.currentTarget.value,
-                        )
-                      }
-                    />
-                  </label>
-                  <button
-                    className="secondary-button compact-button"
-                    type="button"
-                    onClick={() =>
-                      void updateAddressRetention(
+              <div className="retention-controls">
+                <label className="field-control">
+                  <span>Raw retention days</span>
+                  <input
+                    inputMode="numeric"
+                    value={
+                      retentionDrafts[domain.domain_name] ??
+                      String(domain.raw_retention_days ?? "")
+                    }
+                    onChange={(event) =>
+                      updateRetentionDraft(
                         domain.domain_name,
-                        address.local_part,
+                        event.currentTarget.value,
                       )
                     }
-                  >
-                    Save
-                  </button>
-                  <strong>{address.active ? "active" : "inactive"}</strong>
-                  <button
-                    className="icon-button"
-                    type="button"
-                    title={`Deactivate ${address.local_part}`}
-                    aria-label={`Deactivate ${address.local_part}`}
-                    disabled={!address.active}
-                    onClick={() =>
-                      void deactivateAddress(
-                        domain.domain_name,
-                        address.local_part,
-                      )
-                    }
-                  >
-                    <Trash2 aria-hidden="true" size={15} />
-                  </button>
-                </li>
-              ))}
-            </ul>
+                  />
+                </label>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => void updateDomainRetention(domain.domain_name)}
+                >
+                  Save retention
+                </button>
+              </div>
 
-            <section
-              className="forwarding-rules"
-              aria-label={`Forwarding rules for ${domain.domain_name}`}
-            >
-              <h3>Forwarding rules</h3>
               <form
-                className="forwarding-add-form"
+                className="address-add-form"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void addForwardingRule(domain);
+                  void addAddress(domain.domain_name);
                 }}
               >
                 <label className="field-control">
-                  <span>Scope</span>
-                  <select
-                    value={forwardDraft(domain).scope}
-                    onChange={(event) =>
-                      updateForwardDraft(domain.domain_name, {
-                        scope: event.currentTarget.value as
-                          | "address"
-                          | "domain",
-                      })
-                    }
-                  >
-                    <option value="address">address</option>
-                    <option value="domain">domain</option>
-                  </select>
-                </label>
-                <label className="field-control">
-                  <span>Source address</span>
-                  <select
-                    disabled={forwardDraft(domain).scope === "domain"}
-                    value={forwardDraft(domain).local_part}
-                    onChange={(event) => {
-                      const localPart = event.currentTarget.value;
-                      updateForwardDraft(domain.domain_name, {
-                        local_part: localPart,
-                      });
-                    }}
-                  >
-                    {domain.addresses.map((address) => (
-                      <option
-                        key={address.local_part}
-                        value={address.local_part}
-                      >
-                        {address.local_part}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field-control">
-                  <span>Forward to</span>
+                  <span>Add address for {domain.domain_name}</span>
                   <input
-                    value={forwardDraft(domain).target_address}
+                    value={draftLocalParts[domain.domain_name] ?? ""}
                     onChange={(event) => {
-                      updateForwardDraft(domain.domain_name, {
-                        target_address: event.currentTarget.value,
-                      });
+                      const value = event.currentTarget.value;
+                      setDraftLocalParts((current) => ({
+                        ...current,
+                        [domain.domain_name]: value,
+                      }));
                     }}
                   />
-                </label>
-                <label className="field-control">
-                  <span>Sender filter</span>
-                  <input
-                    value={forwardDraft(domain).sender_address}
-                    onChange={(event) =>
-                      updateForwardDraft(domain.domain_name, {
-                        sender_address: event.currentTarget.value,
-                      })
-                    }
-                  />
-                </label>
-                <label className="field-control">
-                  <span>Plus tag</span>
-                  <input
-                    value={forwardDraft(domain).plus_tag}
-                    onChange={(event) =>
-                      updateForwardDraft(domain.domain_name, {
-                        plus_tag: event.currentTarget.value,
-                      })
-                    }
-                  />
-                </label>
-                <label className="checkbox-control">
-                  <input
-                    checked={forwardDraft(domain).require_auth_pass}
-                    type="checkbox"
-                    onChange={(event) =>
-                      updateForwardDraft(domain.domain_name, {
-                        require_auth_pass: event.currentTarget.checked,
-                      })
-                    }
-                  />
-                  <span>Require auth pass</span>
                 </label>
                 <button className="secondary-button" type="submit">
                   <Plus aria-hidden="true" size={15} />
-                  Add forwarding
+                  Add address
                 </button>
               </form>
-              <ul className="forwarding-rule-list">
-                {state.forwardingRules
-                  .filter((rule) => rule.domain_name === domain.domain_name)
-                  .map((rule) => (
-                    <li key={rule.id}>
-                      <span>
-                        {rule.rule_kind === "domain"
-                          ? `*@${rule.domain_name}`
-                          : `${rule.local_part}@${rule.domain_name}`}
-                      </span>
-                      <strong>{rule.target_address}</strong>
-                      {rule.sender_address_normalized ? (
-                        <small>{rule.sender_address_normalized}</small>
-                      ) : null}
-                      {rule.plus_tag ? <small>+{rule.plus_tag}</small> : null}
-                      <em>{rule.active ? "active" : "inactive"}</em>
-                      <button
-                        className="icon-button"
-                        type="button"
-                        title={`Deactivate forwarding rule ${rule.target_address}`}
-                        aria-label={`Deactivate forwarding rule ${rule.target_address}`}
-                        disabled={!rule.active}
-                        onClick={() => void deactivateForwardingRule(rule.id)}
-                      >
-                        <Trash2 aria-hidden="true" size={15} />
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            </section>
-          </article>
-        ))}
-      </div>
+
+              {domain.addresses.length === 0 ? (
+                <div className="empty-state compact-empty">
+                  No accepted addresses
+                </div>
+              ) : (
+                <AddressList
+                  domain={domain}
+                  retentionDrafts={retentionDrafts}
+                  onDeactivate={deactivateAddress}
+                  onRetentionChange={updateRetentionDraft}
+                  onRetentionSave={updateAddressRetention}
+                />
+              )}
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
 
@@ -382,10 +212,30 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
     setActionError(undefined);
     try {
       const updated = await apiClient.updateDomain(domainName, request);
-      replaceDomain(updated);
+      upsertDomain(updated);
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : "Unable to update domain",
+      );
+    }
+  }
+
+  async function createDomain() {
+    const domainName = domainDraft.domainName.trim();
+    if (!domainName) {
+      return;
+    }
+    setActionError(undefined);
+    try {
+      const created = await apiClient.createDomain({
+        domain_name: domainName,
+        routing_policy: domainDraft.routingPolicy,
+      });
+      setDomainDraft({ domainName: "", routingPolicy: "allowlist" });
+      upsertDomain(created);
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Unable to add mail domain",
       );
     }
   }
@@ -449,117 +299,162 @@ export function RoutingAdmin({ apiClient }: { apiClient: RoutingAdminApi }) {
     }
   }
 
-  async function addForwardingRule(domain: DomainConfig) {
-    const draft = forwardDraft(domain);
-    const targetAddress = draft.target_address.trim();
-    if (!targetAddress || (draft.scope === "address" && !draft.local_part)) {
-      return;
-    }
-    setActionError(undefined);
-    try {
-      await apiClient.upsertForwardingRule({
-        domain_name: domain.domain_name,
-        local_part: draft.scope === "address" ? draft.local_part : null,
-        target_address: targetAddress,
-        sender_address: draft.sender_address.trim() || null,
-        plus_tag: draft.plus_tag.trim() || null,
-        require_auth_pass: draft.require_auth_pass,
-      });
-      setDraftForwarding((current) => ({
-        ...current,
-        [domain.domain_name]: { ...draft, target_address: "" },
-      }));
-      await refreshForwardingRules();
-    } catch (error) {
-      setActionError(
-        error instanceof Error
-          ? error.message
-          : "Unable to update forwarding rule",
-      );
-    }
-  }
-
-  async function deactivateForwardingRule(ruleId: string) {
-    setActionError(undefined);
-    try {
-      await apiClient.deactivateForwardingRule(ruleId);
-      await refreshForwardingRules();
-    } catch (error) {
-      setActionError(
-        error instanceof Error
-          ? error.message
-          : "Unable to update forwarding rule",
-      );
-    }
-  }
-
   async function refreshDomain(domainName: string) {
     const domains = await apiClient.listDomains();
     const updated = domains.find((domain) => domain.domain_name === domainName);
     if (updated) {
-      replaceDomain(updated);
+      upsertDomain(updated);
     }
   }
 
-  function replaceDomain(updated: DomainConfig) {
+  function upsertDomain(updated: DomainConfig) {
     setState((current) =>
       current.status === "ready"
         ? {
             ...current,
-            domains: current.domains.map((domain) =>
-              domain.domain_name === updated.domain_name ? updated : domain,
+            domains: sortDomains(
+              current.domains.some(
+                (domain) => domain.domain_name === updated.domain_name,
+              )
+                ? current.domains.map((domain) =>
+                    domain.domain_name === updated.domain_name
+                      ? updated
+                      : domain,
+                  )
+                : [...current.domains, updated],
             ),
           }
         : current,
     );
   }
+}
 
-  async function refreshForwardingRules() {
-    const forwardingRules = await apiClient.listForwardingRules();
-    setState((current) =>
-      current.status === "ready" ? { ...current, forwardingRules } : current,
-    );
-  }
+function DomainCreateForm({
+  draft,
+  onChange,
+  onSubmit,
+}: {
+  draft: DomainDraft;
+  onChange: (draft: DomainDraft) => void;
+  onSubmit: () => Promise<void>;
+}) {
+  return (
+    <form
+      className="domain-create-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onSubmit();
+      }}
+    >
+      <label className="field-control">
+        <span>Mail domain</span>
+        <input
+          placeholder="ahara.io"
+          value={draft.domainName}
+          onChange={(event) =>
+            onChange({ ...draft, domainName: event.currentTarget.value })
+          }
+        />
+      </label>
+      <label className="field-control">
+        <span>Accepted recipient policy</span>
+        <select
+          value={draft.routingPolicy}
+          onChange={(event) =>
+            onChange({
+              ...draft,
+              routingPolicy: event.currentTarget
+                .value as DomainDraft["routingPolicy"],
+            })
+          }
+        >
+          <option value="allowlist">Only listed addresses</option>
+          <option value="catchall">Every address on domain</option>
+        </select>
+      </label>
+      <button className="secondary-button" type="submit">
+        <Plus aria-hidden="true" size={15} />
+        Add mail domain
+      </button>
+    </form>
+  );
+}
 
-  function forwardDraft(domain: DomainConfig) {
-    return (
-      draftForwarding[domain.domain_name] ?? {
-        scope: "address" as const,
-        local_part: domain.addresses[0]?.local_part ?? "",
-        target_address: "",
-        sender_address: "",
-        plus_tag: "",
-        require_auth_pass: true,
-      }
-    );
-  }
-
-  function updateForwardDraft(
-    domainName: string,
-    patch: Partial<DraftForwarding[string]>,
-  ) {
-    setDraftForwarding((current) => {
-      const draft = current[domainName] ?? {
-        scope: "address",
-        local_part: "",
-        target_address: "",
-        sender_address: "",
-        plus_tag: "",
-        require_auth_pass: true,
-      };
-      return {
-        ...current,
-        [domainName]: {
-          ...draft,
-          ...patch,
-        },
-      };
-    });
-  }
+function AddressList({
+  domain,
+  retentionDrafts,
+  onDeactivate,
+  onRetentionChange,
+  onRetentionSave,
+}: {
+  domain: DomainConfig;
+  retentionDrafts: RetentionDrafts;
+  onDeactivate: (domainName: string, localPart: string) => Promise<void>;
+  onRetentionChange: (key: string, value: string) => void;
+  onRetentionSave: (domainName: string, localPart: string) => Promise<void>;
+}) {
+  return (
+    <ul
+      className="address-list"
+      aria-label={`Addresses for ${domain.domain_name}`}
+    >
+      {domain.addresses.map((address) => (
+        <li key={address.local_part}>
+          <span>{address.local_part}</span>
+          <label className="field-control compact-field">
+            <span>Raw retention</span>
+            <input
+              aria-label={`Raw retention days for ${address.local_part}@${domain.domain_name}`}
+              inputMode="numeric"
+              value={
+                retentionDrafts[
+                  addressRetentionKey(domain.domain_name, address.local_part)
+                ] ?? String(address.raw_retention_days ?? "")
+              }
+              onChange={(event) =>
+                onRetentionChange(
+                  addressRetentionKey(domain.domain_name, address.local_part),
+                  event.currentTarget.value,
+                )
+              }
+            />
+          </label>
+          <button
+            className="secondary-button compact-button"
+            type="button"
+            onClick={() =>
+              void onRetentionSave(domain.domain_name, address.local_part)
+            }
+          >
+            Save
+          </button>
+          <strong>{address.active ? "active" : "inactive"}</strong>
+          <button
+            className="icon-button"
+            type="button"
+            title={`Deactivate ${address.local_part}`}
+            aria-label={`Deactivate ${address.local_part}`}
+            disabled={!address.active}
+            onClick={() =>
+              void onDeactivate(domain.domain_name, address.local_part)
+            }
+          >
+            <Trash2 aria-hidden="true" size={15} />
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function addressRetentionKey(domainName: string, localPart: string) {
   return `${domainName}:${localPart}`;
+}
+
+function sortDomains(domains: DomainConfig[]) {
+  return [...domains].sort((left, right) =>
+    left.domain_name.localeCompare(right.domain_name),
+  );
 }
 
 function parseRetentionDays(
@@ -583,7 +478,7 @@ function Header() {
     <header className="admin-toolbar">
       <div className="toolbar-title">
         <ShieldCheck aria-hidden="true" size={18} />
-        <h1 id="routing-title">Routing policy</h1>
+        <h1 id="routing-title">Mail routing</h1>
       </div>
     </header>
   );

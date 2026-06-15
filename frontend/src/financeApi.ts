@@ -1,6 +1,7 @@
 import { config } from "./config";
 import { authenticatedRequest, type ApiClientOptions } from "./apiCore";
 import type {
+  CreateFinanceExpenseOccurrenceRequest,
   CreateFinanceExpenseRequest,
   CreateFinanceReceivableRequest,
   FinanceExpense,
@@ -18,6 +19,10 @@ export type FinanceApiSurface = {
   ) => Promise<FinanceExpense[]>;
   createFinanceExpense: (
     request: CreateFinanceExpenseRequest,
+  ) => Promise<FinanceExpense>;
+  createFinanceExpenseOccurrence: (
+    expenseId: string,
+    request: CreateFinanceExpenseOccurrenceRequest,
   ) => Promise<FinanceExpense>;
   updateFinanceExpense: (
     expenseId: string,
@@ -69,6 +74,16 @@ class FinanceApiClient implements FinanceApiSurface {
       method: "POST",
       body: request,
     });
+  }
+
+  createFinanceExpenseOccurrence(
+    expenseId: string,
+    request: CreateFinanceExpenseOccurrenceRequest,
+  ) {
+    return this.request<FinanceExpense>(
+      `/finance/expenses/${encodeURIComponent(expenseId)}/occurrences`,
+      { method: "POST", body: request },
+    );
   }
 
   updateFinanceExpense(
@@ -146,6 +161,8 @@ function bindFinanceApi(finance: FinanceApiClient): FinanceApiSurface {
   return {
     listFinanceExpenses: (query) => finance.listFinanceExpenses(query),
     createFinanceExpense: (request) => finance.createFinanceExpense(request),
+    createFinanceExpenseOccurrence: (expenseId, request) =>
+      finance.createFinanceExpenseOccurrence(expenseId, request),
     updateFinanceExpense: (expenseId, request) =>
       finance.updateFinanceExpense(expenseId, request),
     listFinanceReceivables: (query) => finance.listFinanceReceivables(query),

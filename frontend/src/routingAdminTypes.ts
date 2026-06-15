@@ -1,18 +1,21 @@
 import type { ApiClient } from "./api";
-import type { DomainConfig, ForwardingRule } from "./types";
+import type { DomainConfig, RoutingPolicy } from "./types";
 
 export type { DomainConfig, UpdateDomainRequest } from "./types";
+
+export type DomainDraft = {
+  domainName: string;
+  routingPolicy: RoutingPolicy;
+};
 
 export type RoutingAdminApi = Pick<
   ApiClient,
   | "listDomains"
+  | "createDomain"
   | "updateDomain"
   | "addAddress"
   | "updateAddress"
   | "deactivateAddress"
-  | "listForwardingRules"
-  | "upsertForwardingRule"
-  | "deactivateForwardingRule"
 >;
 
 export type RoutingState =
@@ -20,20 +23,7 @@ export type RoutingState =
   | {
       status: "ready";
       domains: DomainConfig[];
-      forwardingRules: ForwardingRule[];
     }
   | { status: "error"; message: string };
-
-export type DraftForwarding = Record<
-  string,
-  {
-    scope: "address" | "domain";
-    local_part: string;
-    target_address: string;
-    sender_address: string;
-    plus_tag: string;
-    require_auth_pass: boolean;
-  }
->;
 
 export type RetentionDrafts = Record<string, string>;

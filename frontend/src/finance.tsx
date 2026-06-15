@@ -4,10 +4,12 @@ import { Plus } from "lucide-react";
 import type { ApiClient } from "./api";
 import type { FinanceApiSurface } from "./financeApi";
 import {
+  defaultOccurrenceDraft,
   defaultExpenseDraft,
   defaultReceivableDraft,
   dollarsToCents,
   percentToBps,
+  type ExpenseOccurrenceDraft,
   type ExpenseDraft,
   type ReceivableDraft,
 } from "./financeDrafts";
@@ -58,6 +60,9 @@ export function FinanceView({ apiClient }: { apiClient: FinanceApi }) {
   const [expenseDraft, setExpenseDraft] = useState<ExpenseDraft>(() =>
     defaultExpenseDraft(),
   );
+  const [occurrenceDrafts, setOccurrenceDrafts] = useState<
+    Record<string, ExpenseOccurrenceDraft>
+  >({});
   const [receivableDraft, setReceivableDraft] = useState<ReceivableDraft>(() =>
     defaultReceivableDraft(),
   );
@@ -136,6 +141,9 @@ export function FinanceView({ apiClient }: { apiClient: FinanceApi }) {
           <div className="business-grid wide">
             <ExpenseList
               expenses={state.expenses}
+              occurrenceDrafts={occurrenceDrafts}
+              onOccurrence={createExpenseOccurrence}
+              onOccurrenceDraft={setOccurrenceDrafts}
               onStatus={updateExpenseStatus}
             />
             <ReceivableList
@@ -202,6 +210,23 @@ export function FinanceView({ apiClient }: { apiClient: FinanceApi }) {
 
   async function updateExpenseStatus(id: string, status: ExpenseStatus) {
     await runAction(() => apiClient.updateFinanceExpense(id, { status }));
+  }
+
+  async function createExpenseOccurrence(
+    expense: FinanceExpense,
+    draft: ExpenseOccurrenceDraft,
+  ) {
+    await runAction(async () => {
+      await apiClient.createFinanceExpenseOccurrence(expense.id, {
+        amount_cents: dollarsToCents(draft.amount),
+        incurred_on: draft.incurred_on,
+        status: "paid",
+      });
+      setOccurrenceDrafts((current) => ({
+        ...current,
+        [expense.id]: defaultOccurrenceDraft(expense),
+      }));
+    });
   }
 
   async function updateReceivableStatus(id: string, status: ReceivableStatus) {

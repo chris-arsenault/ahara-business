@@ -1,33 +1,48 @@
-/* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect, react-perf/jsx-no-new-function-as-prop */
-import { useEffect, useState, type ReactNode } from "react";
+/* eslint-disable max-lines-per-function, react-hooks/exhaustive-deps, react-hooks/set-state-in-effect, react-perf/jsx-no-new-function-as-prop */
 import { Forward, RefreshCw } from "lucide-react";
-import type { ForwardingAuditApi } from "./forwardingAuditTypes";
-import type { ForwardingMessageStatus, ForwardingRuleStatus } from "./types";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import type { ForwardingApi } from "./forwardingAuditTypes";
+import {
+  ForwardingRuleForm,
+  ForwardingRuleList,
+} from "./forwardingRuleControls";
+import {
+  blankForwardingDraft,
+  normalizeForwardingDraft,
+  ruleSource,
+  type ForwardingDraft,
+} from "./forwardingRuleDrafts";
+import type {
+  DomainConfig,
+  ForwardingMessageStatus,
+  ForwardingRule,
+  ForwardingRuleStatus,
+} from "./types";
 
 type State =
   | { status: "loading" }
   | {
       status: "ready";
-      rules: ForwardingRuleStatus[];
+      domains: DomainConfig[];
       messages: ForwardingMessageStatus[];
+      rules: ForwardingRule[];
+      ruleStatuses: ForwardingRuleStatus[];
     }
   | { status: "error"; message: string };
 
-export function ForwardingAuditView({
-  apiClient,
-}: {
-  apiClient: ForwardingAuditApi;
-}) {
+export function ForwardingView({ apiClient }: { apiClient: ForwardingApi }) {
   const [state, setState] = useState<State>({ status: "loading" });
+  const [draft, setDraft] = useState<ForwardingDraft>(blankForwardingDraft([]));
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  async function load() {
-    setState({ status: "loading" });
+  async function load(showLoading = true) {
+    if (showLoading) {
+      setState({ status: "loading" });
+    }
     try {
-      const [rules, messages] = await Promise.all([
-        apiClient.listForwardingRuleStatuses(),
-        apiClient.listForwardingMessageStatuses(100),
-      ]);
-      setState({ status: "ready", rules, messages });
+      const next = await loadForwarding(apiClient);
+      setState(next);
+      setDraft((current) => normalizeForwardingDraft(current, next.domains));
     } catch (error) {
       setState({
         status: "error",
@@ -61,35 +76,119 @@ export function ForwardingAuditView({
   return (
     <Shell
       body={
-        <div className="business-grid wide">
-          <section className="business-list forwarding-status-list">
-            <h2>Rules</h2>
-            {state.rules.map((rule) => (
-              <article key={rule.rule_id}>
-                <strong>{ruleSource(rule)}</strong>
-                <span>{rule.target_address}</span>
-                <small>{rule.active ? "active" : "inactive"}</small>
-                <StatusCounts status={rule} />
-                {rule.last_error ? <em>{rule.last_error}</em> : null}
-              </article>
-            ))}
-          </section>
-          <section className="business-list forwarding-status-list">
-            <h2>Messages</h2>
-            {state.messages.map((message) => (
-              <article key={message.source_message_id}>
-                <strong>{message.subject || "(no subject)"}</strong>
-                <span>{message.from_address}</span>
-                <small>{message.matching_rule_count} rules</small>
-                <StatusCounts status={message} />
-                {message.last_error ? <em>{message.last_error}</em> : null}
-              </article>
-            ))}
-          </section>
-        </div>
+        <>
+          {actionError ? (
+            <div className="error-state compact-error" role="alert">
+              {actionError}
+            </div>
+          ) : null}
+          <div className="business-grid wide forwarding-grid">
+            <ForwardingRuleForm
+              domains={state.domains}
+              draft={draft}
+              onChange={setDraft}
+              onSubmit={saveRule}
+            />
+            <ForwardingRuleList
+              rules={state.rules}
+              onDeactivate={deactivateRule}
+            />
+            <RuleStatusList rules={state.ruleStatuses} />
+            <MessageStatusList messages={state.messages} />
+          </div>
+        </>
       }
-      onRefresh={() => void load()}
+      onRefresh={() => void load(false)}
     />
+  );
+
+  async function saveRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const targetAddress = draft.target_address.trim();
+    if (!targetAddress) {
+      setActionError("Forward to is required");
+      return;
+    }
+    if (draft.scope === "address" && !draft.local_part) {
+      setActionError("Source address is required");
+      return;
+    }
+
+    await runAction(async () => {
+      await apiClient.upsertForwardingRule({
+        domain_name: draft.domain_name,
+        local_part: draft.scope === "address" ? draft.local_part : null,
+        plus_tag: draft.plus_tag.trim() || null,
+        require_auth_pass: draft.require_auth_pass,
+        sender_address: draft.sender_address.trim() || null,
+        target_address: targetAddress,
+      });
+      setDraft((current) => ({ ...current, target_address: "" }));
+    });
+  }
+
+  async function deactivateRule(ruleId: string) {
+    await runAction(async () => {
+      await apiClient.deactivateForwardingRule(ruleId);
+    });
+  }
+
+  async function runAction(action: () => Promise<void>) {
+    setActionError(null);
+    try {
+      await action();
+      await load(false);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Action failed");
+    }
+  }
+}
+
+function RuleStatusList({ rules }: { rules: ForwardingRuleStatus[] }) {
+  return (
+    <section className="business-list forwarding-status-list">
+      <h2>Rule status</h2>
+      {rules.length === 0 ? (
+        <div className="empty-state compact-empty">
+          No forwarding activity yet
+        </div>
+      ) : (
+        rules.map((rule) => (
+          <article key={rule.rule_id}>
+            <strong>{ruleSource(rule)}</strong>
+            <span>{rule.target_address}</span>
+            <small>{rule.active ? "active" : "inactive"}</small>
+            <StatusCounts status={rule} />
+            {rule.last_error ? <em>{rule.last_error}</em> : null}
+          </article>
+        ))
+      )}
+    </section>
+  );
+}
+
+function MessageStatusList({
+  messages,
+}: {
+  messages: ForwardingMessageStatus[];
+}) {
+  return (
+    <section className="business-list forwarding-status-list">
+      <h2>Message status</h2>
+      {messages.length === 0 ? (
+        <div className="empty-state compact-empty">No matched messages yet</div>
+      ) : (
+        messages.map((message) => (
+          <article key={message.source_message_id}>
+            <strong>{message.subject || "(no subject)"}</strong>
+            <span>{message.from_address}</span>
+            <small>{message.matching_rule_count} rules</small>
+            <StatusCounts status={message} />
+            {message.last_error ? <em>{message.last_error}</em> : null}
+          </article>
+        ))
+      )}
+    </section>
   );
 }
 
@@ -161,8 +260,14 @@ function StatusCounts({
   );
 }
 
-function ruleSource(rule: ForwardingRuleStatus) {
-  return rule.rule_kind === "domain"
-    ? `*@${rule.domain_name}`
-    : `${rule.local_part}@${rule.domain_name}`;
+async function loadForwarding(
+  apiClient: ForwardingApi,
+): Promise<Extract<State, { status: "ready" }>> {
+  const [domains, rules, ruleStatuses, messages] = await Promise.all([
+    apiClient.listDomains(),
+    apiClient.listForwardingRules(),
+    apiClient.listForwardingRuleStatuses(),
+    apiClient.listForwardingMessageStatuses(100),
+  ]);
+  return { status: "ready", domains, messages, rules, ruleStatuses };
 }

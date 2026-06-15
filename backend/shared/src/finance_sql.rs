@@ -1,6 +1,8 @@
 pub(crate) const EXPENSE_SELECT_BY_ID: &str =
     "SELECT id, title, vendor_name, category, expense_kind,
-    recurrence_interval, status, amount_cents, currency, incurred_on::text AS incurred_on,
+    recurrence_interval, recurrence_parent_expense_id,
+    recurrence_instance_on::text AS recurrence_instance_on,
+    status, amount_cents, currency, incurred_on::text AS incurred_on,
     service_period_start::text AS service_period_start,
     service_period_end::text AS service_period_end, business_use_percent_bps,
     source_message_id, source_attachment_id, source_asset_id, notes,
@@ -8,7 +10,9 @@ pub(crate) const EXPENSE_SELECT_BY_ID: &str =
     FROM finance_expenses WHERE id = $1";
 
 pub(crate) const EXPENSE_LIST: &str = "SELECT id, title, vendor_name, category, expense_kind,
-    recurrence_interval, status, amount_cents, currency, incurred_on::text AS incurred_on,
+    recurrence_interval, recurrence_parent_expense_id,
+    recurrence_instance_on::text AS recurrence_instance_on,
+    status, amount_cents, currency, incurred_on::text AS incurred_on,
     service_period_start::text AS service_period_start,
     service_period_end::text AS service_period_end, business_use_percent_bps,
     source_message_id, source_attachment_id, source_asset_id, notes,
@@ -23,11 +27,12 @@ pub(crate) const EXPENSE_INSERT: &str = "INSERT INTO finance_expenses (
     title, vendor_name, category, expense_kind, recurrence_interval, status,
     amount_cents, currency, incurred_on, service_period_start, service_period_end,
     business_use_percent_bps, source_message_id, source_attachment_id,
-    source_asset_id, notes
+    source_asset_id, notes, recurrence_parent_expense_id, recurrence_instance_on
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10::date, $11::date,
-    $12, $13, $14, $15, $16
+    $12, $13, $14, $15, $16, $17, $18::date
 ) RETURNING id, title, vendor_name, category, expense_kind, recurrence_interval, status,
+    recurrence_parent_expense_id, recurrence_instance_on::text AS recurrence_instance_on,
     amount_cents, currency, incurred_on::text AS incurred_on,
     service_period_start::text AS service_period_start,
     service_period_end::text AS service_period_end, business_use_percent_bps,
@@ -40,9 +45,11 @@ pub(crate) const EXPENSE_UPDATE: &str = "UPDATE finance_expenses
         currency = $9, incurred_on = $10::date, service_period_start = $11::date,
         service_period_end = $12::date, business_use_percent_bps = $13,
         source_message_id = $14, source_attachment_id = $15, source_asset_id = $16,
-        notes = $17, updated_at = now()
+        notes = $17, recurrence_parent_expense_id = $18,
+        recurrence_instance_on = $19::date, updated_at = now()
     WHERE id = $1
     RETURNING id, title, vendor_name, category, expense_kind, recurrence_interval, status,
+        recurrence_parent_expense_id, recurrence_instance_on::text AS recurrence_instance_on,
         amount_cents, currency, incurred_on::text AS incurred_on,
         service_period_start::text AS service_period_start,
         service_period_end::text AS service_period_end, business_use_percent_bps,

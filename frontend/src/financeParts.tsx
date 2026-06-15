@@ -1,8 +1,13 @@
 /* eslint-disable react-perf/jsx-no-new-function-as-prop */
 import { ReceiptText, RefreshCw } from "lucide-react";
-import type { ReactNode } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { Contact } from "./types";
-import { formatMoney, formatPercent } from "./financeDrafts";
+import {
+  defaultOccurrenceDraft,
+  formatMoney,
+  formatPercent,
+  type ExpenseOccurrenceDraft,
+} from "./financeDrafts";
 import { expenseStatuses, receivableStatuses } from "./financeOptions";
 import type {
   ExpenseStatus,
@@ -141,9 +146,20 @@ export function SummaryCards({ summary }: { summary: FinanceSummary }) {
 
 export function ExpenseList({
   expenses,
+  occurrenceDrafts,
+  onOccurrence,
+  onOccurrenceDraft,
   onStatus,
 }: {
   expenses: FinanceExpense[];
+  occurrenceDrafts: Record<string, ExpenseOccurrenceDraft>;
+  onOccurrence: (
+    expense: FinanceExpense,
+    draft: ExpenseOccurrenceDraft,
+  ) => Promise<void>;
+  onOccurrenceDraft: Dispatch<
+    SetStateAction<Record<string, ExpenseOccurrenceDraft>>
+  >;
   onStatus: (id: string, status: ExpenseStatus) => void;
 }) {
   return (
@@ -162,6 +178,21 @@ export function ExpenseList({
             values={expenseStatuses}
             onChange={(status) => onStatus(expense.id, status as ExpenseStatus)}
           />
+          {canRecordOccurrence(expense) ? (
+            <OccurrenceForm
+              draft={
+                occurrenceDrafts[expense.id] ?? defaultOccurrenceDraft(expense)
+              }
+              expense={expense}
+              onChange={(draft) =>
+                onOccurrenceDraft((current) => ({
+                  ...current,
+                  [expense.id]: draft,
+                }))
+              }
+              onSubmit={onOccurrence}
+            />
+          ) : null}
         </article>
       ))}
     </section>
@@ -230,5 +261,62 @@ function StatusSelect({
         </option>
       ))}
     </select>
+  );
+}
+
+function OccurrenceForm({
+  draft,
+  expense,
+  onChange,
+  onSubmit,
+}: {
+  draft: ExpenseOccurrenceDraft;
+  expense: FinanceExpense;
+  onChange: (draft: ExpenseOccurrenceDraft) => void;
+  onSubmit: (
+    expense: FinanceExpense,
+    draft: ExpenseOccurrenceDraft,
+  ) => Promise<void>;
+}) {
+  return (
+    <form
+      className="expense-occurrence-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onSubmit(expense, draft);
+      }}
+    >
+      <label className="field-control">
+        <span>Occurrence amount</span>
+        <input
+          value={draft.amount}
+          onChange={(event) =>
+            onChange({ ...draft, amount: event.currentTarget.value })
+          }
+        />
+      </label>
+      <label className="field-control">
+        <span>Occurrence date</span>
+        <input
+          type="date"
+          value={draft.incurred_on}
+          onChange={(event) =>
+            onChange({ ...draft, incurred_on: event.currentTarget.value })
+          }
+        />
+      </label>
+      <button className="secondary-button compact-button" type="submit">
+        Record occurrence
+      </button>
+    </form>
+  );
+}
+
+function canRecordOccurrence(expense: FinanceExpense) {
+  return (
+    expense.expense_kind === "recurring" &&
+    expense.recurrence_interval !== "none" &&
+    expense.status !== "ended" &&
+    expense.status !== "archived"
   );
 }

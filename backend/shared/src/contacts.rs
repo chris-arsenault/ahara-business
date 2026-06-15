@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use serde::de::{DeserializeOwned, Deserializer};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -28,7 +29,8 @@ pub struct CreateContactRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateContactRequest {
     pub display_name: Option<String>,
-    pub primary_address: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_option")]
+    pub primary_address: Option<Option<String>>,
     pub notes: Option<String>,
 }
 
@@ -118,7 +120,8 @@ impl ContactsService for PgContactsService {
         let existing = self.get_contact(contact_id).await?;
         let contact_id = parse_contact_id(contact_id)?;
         let (primary_address, primary_address_normalized) = match request.primary_address {
-            Some(primary_address) => normalize_primary_address(Some(&primary_address))?,
+            Some(Some(primary_address)) => normalize_primary_address(Some(&primary_address))?,
+            Some(None) => (None, None),
             None => (
                 existing.primary_address.clone(),
                 existing.primary_address_normalized.clone(),
@@ -234,7 +237,7 @@ impl ContactsService for InMemoryContactsService {
             contact.display_name = display_name;
         }
         if let Some(primary_address) = request.primary_address {
-            let (address, normalized) = normalize_primary_address(Some(&primary_address))?;
+            let (address, normalized) = normalize_primary_address(primary_address.as_deref())?;
             contact.primary_address = address;
             contact.primary_address_normalized = normalized;
         }
@@ -260,6 +263,14 @@ fn normalize_primary_address(address: Option<&str>) -> AppResult<(Option<String>
         Some(address.to_string()),
         Some(address.to_ascii_lowercase()),
     ))
+}
+
+fn deserialize_optional_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 #[cfg(test)]
@@ -320,7 +331,7 @@ mod tests {
                 "contact-1",
                 UpdateContactRequest {
                     display_name: Some("Chris A".to_string()),
-                    primary_address: Some("Chris+A@Example.Test".to_string()),
+                    primary_address: Some(Some("Chris+A@Example.Test".to_string())),
                     notes: Some("updated".to_string()),
                 },
             )
@@ -334,6 +345,24 @@ mod tests {
             Some("chris+a@example.test")
         );
         assert_eq!(updated.notes, "updated");
+    }
+
+    #[tokio::test]
+    async fn contacts_clear_primary_address_on_null_update() {
+        let updated = service()
+            .update_contact(
+                "contact-1",
+                UpdateContactRequest {
+                    display_name: None,
+                    primary_address: Some(None),
+                    notes: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(updated.primary_address, None);
+        assert_eq!(updated.primary_address_normalized, None);
     }
 
     #[tokio::test]

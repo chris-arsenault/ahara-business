@@ -90,6 +90,10 @@ describe("finance API routes", () => {
       incurred_on: "2026-06-01",
       business_use_percent_bps: 8000,
     });
+    await client.createFinanceExpenseOccurrence("expense-1", {
+      amount_cents: 13542,
+      incurred_on: "2026-07-01",
+    });
     await client.updateFinanceExpense("expense-1", { status: "ended" });
     await client.listFinanceReceivables({ status: "owed" });
     await client.createFinanceReceivable({
@@ -110,6 +114,10 @@ describe("finance API routes", () => {
         "https://api.mail.ahara.io/finance/expenses?tax_year=2026&limit=250",
       ],
       ["POST", "https://api.mail.ahara.io/finance/expenses"],
+      [
+        "POST",
+        "https://api.mail.ahara.io/finance/expenses/expense-1/occurrences",
+      ],
       ["PATCH", "https://api.mail.ahara.io/finance/expenses/expense-1"],
       ["GET", "https://api.mail.ahara.io/finance/receivables?status=owed"],
       ["POST", "https://api.mail.ahara.io/finance/receivables"],
@@ -117,7 +125,11 @@ describe("finance API routes", () => {
       ["GET", "https://api.mail.ahara.io/finance/summary?tax_year=2026"],
     ]);
     expect(bodyOf(requests[1])).toMatchObject({ title: "AI tools" });
-    expect(bodyOf(requests[5])).toEqual({
+    expect(bodyOf(requests[2])).toEqual({
+      amount_cents: 13542,
+      incurred_on: "2026-07-01",
+    });
+    expect(bodyOf(requests[6])).toEqual({
       paid_on: "2026-06-15",
       status: "paid",
     });

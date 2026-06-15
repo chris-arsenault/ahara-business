@@ -142,6 +142,7 @@ describe("ApiClient", () => {
     await client.createContact({ display_name: "Chris" });
     await client.updateContact("contact-1", { notes: "updated" });
     await client.listDomains();
+    await client.createDomain({ domain_name: "ahara.io" });
     await client.updateDomain("ahara.io", { routing_policy: "catchall" });
     await client.addAddress("ahara.io", "support");
     await client.updateAddress("ahara.io", "support", {
@@ -156,6 +157,7 @@ describe("ApiClient", () => {
       ["POST", "https://api.mail.ahara.io/contacts"],
       ["PATCH", "https://api.mail.ahara.io/contacts/contact-1"],
       ["GET", "https://api.mail.ahara.io/domains"],
+      ["POST", "https://api.mail.ahara.io/domains"],
       ["PATCH", "https://api.mail.ahara.io/domains/ahara.io"],
       ["POST", "https://api.mail.ahara.io/domains/ahara.io/addresses"],
       ["PATCH", "https://api.mail.ahara.io/domains/ahara.io/addresses/support"],
@@ -164,10 +166,11 @@ describe("ApiClient", () => {
         "https://api.mail.ahara.io/domains/ahara.io/addresses/support",
       ],
     ]);
-    expect(bodyOf(requests[5])).toEqual({
+    expect(bodyOf(requests[4])).toEqual({ domain_name: "ahara.io" });
+    expect(bodyOf(requests[6])).toEqual({
       local_part: "support",
     });
-    expect(bodyOf(requests[6])).toEqual({ raw_retention_days: null });
+    expect(bodyOf(requests[7])).toEqual({ raw_retention_days: null });
   });
 
   it("calls outbound compose reply and status routes", async () => {

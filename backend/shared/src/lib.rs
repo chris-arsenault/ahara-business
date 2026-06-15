@@ -13,6 +13,7 @@ pub mod error;
 pub mod feedback;
 pub mod finance;
 mod finance_model;
+mod finance_occurrence;
 mod finance_sql;
 mod finance_types;
 pub mod forwarding;

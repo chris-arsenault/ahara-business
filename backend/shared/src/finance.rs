@@ -14,11 +14,11 @@ use crate::finance_sql::{
 };
 
 pub use crate::finance_types::{
-    CreateFinanceExpenseRequest, CreateFinanceReceivableRequest, ExpenseKind, ExpenseStatus,
-    FinanceCategoryTotal, FinanceExpense, FinanceExpenseQuery, FinanceReceivable,
-    FinanceReceivableQuery, FinanceSummary, FinanceSummaryQuery, FinanceVendorTotal,
-    ReceivableStatus, RecurrenceInterval, UpdateFinanceExpenseRequest,
-    UpdateFinanceReceivableRequest,
+    CreateFinanceExpenseOccurrenceRequest, CreateFinanceExpenseRequest,
+    CreateFinanceReceivableRequest, ExpenseKind, ExpenseStatus, FinanceCategoryTotal,
+    FinanceExpense, FinanceExpenseQuery, FinanceReceivable, FinanceReceivableQuery, FinanceSummary,
+    FinanceSummaryQuery, FinanceVendorTotal, ReceivableStatus, RecurrenceInterval,
+    UpdateFinanceExpenseRequest, UpdateFinanceReceivableRequest,
 };
 
 #[async_trait]
@@ -27,6 +27,11 @@ pub trait FinanceService: Send + Sync {
     async fn create_expense(
         &self,
         request: CreateFinanceExpenseRequest,
+    ) -> AppResult<FinanceExpense>;
+    async fn create_expense_occurrence(
+        &self,
+        expense_id: &str,
+        request: CreateFinanceExpenseOccurrenceRequest,
     ) -> AppResult<FinanceExpense>;
     async fn update_expense(
         &self,
@@ -119,6 +124,21 @@ impl FinanceService for PgFinanceService {
         let expense_id = parse_uuid(expense_id, "expense id")?;
         let input = NormalizedExpenseInput::update(self.expense_row(expense_id).await?, request)?;
         let row = bind_expense(sqlx::query_as(EXPENSE_UPDATE).bind(expense_id), &input)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|err| AppError::Database(err.to_string()))?;
+        FinanceExpenseRow::try_into(row)
+    }
+
+    async fn create_expense_occurrence(
+        &self,
+        expense_id: &str,
+        request: CreateFinanceExpenseOccurrenceRequest,
+    ) -> AppResult<FinanceExpense> {
+        let expense_id = parse_uuid(expense_id, "expense id")?;
+        let input =
+            NormalizedExpenseInput::occurrence(self.expense_row(expense_id).await?, request)?;
+        let row = bind_expense(sqlx::query_as(EXPENSE_INSERT), &input)
             .fetch_one(&self.pool)
             .await
             .map_err(|err| AppError::Database(err.to_string()))?;
@@ -225,6 +245,10 @@ impl TryFrom<FinanceExpenseRow> for FinanceExpense {
             category: value.category,
             expense_kind: ExpenseKind::parse(&value.expense_kind)?,
             recurrence_interval: RecurrenceInterval::parse(&value.recurrence_interval)?,
+            recurrence_parent_expense_id: value
+                .recurrence_parent_expense_id
+                .map(|id| id.to_string()),
+            recurrence_instance_on: value.recurrence_instance_on,
             status: ExpenseStatus::parse(&value.status)?,
             amount_cents: value.amount_cents,
             business_amount_cents,
@@ -330,6 +354,8 @@ fn bind_expense<'q>(
         .bind(input.source_attachment_id)
         .bind(&input.source_asset_id)
         .bind(&input.notes)
+        .bind(input.recurrence_parent_expense_id)
+        .bind(&input.recurrence_instance_on)
 }
 
 fn bind_receivable<'q>(

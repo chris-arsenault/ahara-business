@@ -10,9 +10,13 @@ pub const MAIL_MODEL_MIGRATION: &str = concat!(
     "\n",
     include_str!("../../../db/migrations/003_calendar_booking.sql"),
     "\n",
-    include_str!("../../../db/migrations/004_tax_audit_finance.sql")
+    include_str!("../../../db/migrations/004_tax_audit_finance.sql"),
+    "\n",
+    include_str!("../../../db/migrations/005_recurring_expense_occurrences.sql")
 );
 pub const MAIL_MODEL_ROLLBACK: &str = concat!(
+    include_str!("../../../db/migrations/rollback/005_recurring_expense_occurrences.sql"),
+    "\n",
     include_str!("../../../db/migrations/rollback/004_tax_audit_finance.sql"),
     "\n",
     include_str!("../../../db/migrations/rollback/003_calendar_booking.sql"),

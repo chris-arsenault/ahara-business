@@ -12,11 +12,11 @@ use shared::db::database_url;
 use shared::domain_config::{AcceptedAddress, DomainConfig, InMemoryDomainConfigService};
 use shared::error::{AppError, AppResult};
 use shared::finance::{
-    CreateFinanceExpenseRequest, CreateFinanceReceivableRequest, ExpenseKind, ExpenseStatus,
-    FinanceCategoryTotal, FinanceExpense, FinanceExpenseQuery, FinanceReceivable,
-    FinanceReceivableQuery, FinanceService, FinanceSummary, FinanceSummaryQuery,
-    FinanceVendorTotal, ReceivableStatus, RecurrenceInterval, UpdateFinanceExpenseRequest,
-    UpdateFinanceReceivableRequest,
+    CreateFinanceExpenseOccurrenceRequest, CreateFinanceExpenseRequest,
+    CreateFinanceReceivableRequest, ExpenseKind, ExpenseStatus, FinanceCategoryTotal,
+    FinanceExpense, FinanceExpenseQuery, FinanceReceivable, FinanceReceivableQuery, FinanceService,
+    FinanceSummary, FinanceSummaryQuery, FinanceVendorTotal, ReceivableStatus, RecurrenceInterval,
+    UpdateFinanceExpenseRequest, UpdateFinanceReceivableRequest,
 };
 use shared::forwarding::InMemoryForwardingRuleService;
 use shared::mailbox::{
@@ -94,6 +94,17 @@ impl FinanceService for TestFinanceService {
         Ok(item)
     }
 
+    async fn create_expense_occurrence(
+        &self,
+        expense_id: &str,
+        request: CreateFinanceExpenseOccurrenceRequest,
+    ) -> AppResult<FinanceExpense> {
+        let mut item = expense("expense-3", "AWS", "cloud", request.amount_cents, 7500);
+        item.recurrence_parent_expense_id = Some(expense_id.to_string());
+        item.recurrence_instance_on = Some(request.incurred_on);
+        Ok(item)
+    }
+
     async fn list_receivables(
         &self,
         _query: FinanceReceivableQuery,
@@ -161,6 +172,8 @@ fn expense(
         category: category.to_string(),
         expense_kind: ExpenseKind::Recurring,
         recurrence_interval: RecurrenceInterval::Monthly,
+        recurrence_parent_expense_id: None,
+        recurrence_instance_on: None,
         status: ExpenseStatus::Active,
         amount_cents,
         business_amount_cents,

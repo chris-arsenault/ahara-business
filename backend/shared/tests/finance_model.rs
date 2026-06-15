@@ -184,13 +184,25 @@ fn finance_tables_enforce_tax_allocation_and_audit_constraints() {
         SELECT contact_row.id, 'Client session', 25000, '2026-06-15'
         FROM contact_row, expense_row;",
     );
+    run_psql(
+        &container.name,
+        "INSERT INTO finance_expenses (
+            title, vendor_name, category, expense_kind, recurrence_interval,
+            amount_cents, incurred_on, business_use_percent_bps,
+            recurrence_parent_expense_id, recurrence_instance_on
+        )
+        SELECT title, vendor_name, category, expense_kind, recurrence_interval,
+            13542, '2026-07-01', business_use_percent_bps, id, '2026-07-01'
+        FROM finance_expenses
+        WHERE title = 'Cloud hosting';",
+    );
 
     assert_eq!(
         scalar_i64(
             &container.name,
             "SELECT count(*) FROM finance_expense_audit",
         ),
-        1
+        2
     );
     assert_eq!(
         scalar_i64(
@@ -210,6 +222,16 @@ fn finance_tables_enforce_tax_allocation_and_audit_constraints() {
         "INSERT INTO finance_receivables (
             title, status, amount_cents
         ) VALUES ('bad', 'paid', 100);",
+    );
+    assert_psql_fails(
+        &container.name,
+        "INSERT INTO finance_expenses (
+            title, category, amount_cents, incurred_on, recurrence_parent_expense_id
+        )
+        SELECT 'bad', 'cloud', 100, '2026-07-01', id
+        FROM finance_expenses
+        WHERE title = 'Cloud hosting'
+        LIMIT 1;",
     );
     println!("finance tables enforce tax allocation and receivable audit constraints");
 }

@@ -146,6 +146,9 @@ Core records:
 Expected behavior:
 
 - Create and update expenses manually from the operator UI.
+- Record each recurring expense occurrence as its own audited expense row so
+  fluctuating bills, such as AWS usage, keep their actual amount for that
+  instance.
 - Assign business-use percentages so gross, business, and personal portions are
   visible for a tax year.
 - Track manual client receivables as owed, partially paid, paid, void, or

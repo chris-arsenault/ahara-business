@@ -543,7 +543,8 @@ button {
 .reply-message textarea,
 .contact-control select,
 .field-control input,
-.field-control select {
+.field-control select,
+.field-control textarea {
   min-height: 36px;
   border: 1px solid var(--rule-strong);
   border-radius: 2px;
@@ -564,10 +565,17 @@ button {
 .reply-message textarea:focus,
 .contact-control select:focus,
 .field-control input:focus,
-.field-control select:focus {
+.field-control select:focus,
+.field-control textarea:focus {
   border-color: var(--ink);
   outline: none;
   box-shadow: inset 0 -2px 0 var(--wax);
+}
+
+.field-control textarea {
+  min-height: 108px;
+  padding: 7px 10px;
+  resize: vertical;
 }
 
 .compose-message,
@@ -900,6 +908,14 @@ button {
   font-weight: 600;
 }
 
+.compact-empty {
+  min-height: 44px;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 2px;
+  padding: 10px;
+  font-size: 0.9375rem;
+}
+
 .detail-empty {
   min-height: 100%;
   display: grid;
@@ -1067,6 +1083,22 @@ button {
   font-size: 0.75rem;
 }
 
+/* ---------- Contacts ---------- */
+
+.contacts-grid {
+  grid-template-columns: minmax(280px, 1fr) minmax(280px, 420px);
+}
+
+.contact-list article {
+  grid-template-columns:
+    minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1.2fr)
+    auto;
+}
+
+.contact-editor {
+  align-self: start;
+}
+
 /* ---------- Routing admin ---------- */
 
 .domain-list {
@@ -1115,6 +1147,16 @@ button {
 .field-control {
   display: grid;
   gap: 5px;
+}
+
+.domain-create-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(220px, 280px) auto;
+  align-items: end;
+  justify-content: start;
+  gap: 10px;
+  padding: 14px 16px 18px;
+  border-bottom: 3px double var(--rule-strong);
 }
 
 .address-add-form {
@@ -1203,10 +1245,34 @@ button {
 
 .forwarding-add-form {
   display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 220px)) auto;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   align-items: end;
   justify-content: start;
   gap: 10px;
+}
+
+.forwarding-grid {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.forwarding-rule-form {
+  grid-column: 1 / -1;
+}
+
+.forwarding-rule-manager article {
+  grid-template-columns:
+    minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1.2fr)
+    auto;
+}
+
+.forwarding-status-list article {
+  grid-template-columns:
+    minmax(0, 1.1fr) minmax(0, 1fr) minmax(70px, auto)
+    minmax(220px, 1.2fr);
+}
+
+.forwarding-status-list article > em {
+  grid-column: 1 / -1;
 }
 
 .checkbox-control {
@@ -1214,7 +1280,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   font-size: 0.8125rem;
 }
 
@@ -1506,6 +1572,17 @@ button {
     minmax(90px, auto);
 }
 
+.expense-occurrence-form {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(140px, 180px) auto;
+  align-items: end;
+  justify-content: start;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule);
+}
+
 .inline-actions {
   display: flex;
   align-items: center;
@@ -1621,11 +1698,13 @@ button {
     grid-column: auto;
   }
 
-  .address-add-form {
+  .address-add-form,
+  .domain-create-form {
     grid-template-columns: 1fr;
   }
 
   .forwarding-add-form,
+  .expense-occurrence-form,
   .forwarding-rule-list li,
   .shared-object-list li,
   .business-list article,

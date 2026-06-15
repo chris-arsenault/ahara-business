@@ -35,6 +35,15 @@ pub struct UpdateDomainRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateDomainRequest {
+    pub domain_name: String,
+    pub routing_policy: Option<RoutingPolicy>,
+    pub active: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_optional_option")]
+    pub raw_retention_days: Option<Option<i32>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateAddressRequest {
     pub local_part: String,
     pub raw_retention_days: Option<i32>,
@@ -50,6 +59,7 @@ pub struct UpdateAddressRequest {
 #[async_trait]
 pub trait DomainConfigService: Send + Sync {
     async fn list_domains(&self) -> AppResult<Vec<DomainConfig>>;
+    async fn upsert_domain(&self, request: CreateDomainRequest) -> AppResult<DomainConfig>;
     async fn update_domain(
         &self,
         domain_name: &str,
@@ -114,6 +124,49 @@ impl DomainConfigService for PgDomainConfigService {
         }
 
         Ok(domains)
+    }
+
+    async fn upsert_domain(&self, request: CreateDomainRequest) -> AppResult<DomainConfig> {
+        let domain_name = normalize_domain_name(&request.domain_name)?;
+        validate_retention_days(request.raw_retention_days.flatten())?;
+        let routing_policy = request.routing_policy.map(RoutingPolicy::as_db_value);
+        let update_raw_retention_days = request.raw_retention_days.is_some();
+        let raw_retention_days = request.raw_retention_days.flatten();
+        let row: DomainRow = sqlx::query_as(
+            "INSERT INTO domains (domain_name, routing_policy, active, raw_retention_days)
+             VALUES ($1, COALESCE($2, 'allowlist'), COALESCE($3, true), $5)
+             ON CONFLICT (domain_name) DO UPDATE SET
+                 routing_policy = COALESCE($2, domains.routing_policy),
+                 active = COALESCE($3, domains.active),
+                 raw_retention_days = CASE
+                     WHEN $4 THEN EXCLUDED.raw_retention_days
+                     ELSE domains.raw_retention_days
+                 END,
+                 updated_at = now()
+             RETURNING domain_name, routing_policy, active, raw_retention_days",
+        )
+        .bind(&domain_name)
+        .bind(routing_policy)
+        .bind(request.active)
+        .bind(update_raw_retention_days)
+        .bind(raw_retention_days)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| AppError::Database(err.to_string()))?;
+
+        let addresses: Vec<AddressRow> = sqlx::query_as(
+            "SELECT addresses.local_part, addresses.active, addresses.raw_retention_days
+             FROM addresses
+             JOIN domains ON domains.id = addresses.domain_id
+             WHERE domains.domain_name = $1
+             ORDER BY addresses.local_part",
+        )
+        .bind(&domain_name)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| AppError::Database(err.to_string()))?;
+
+        row.into_domain_config(addresses)
     }
 
     async fn update_domain(
@@ -315,6 +368,31 @@ impl DomainConfigService for InMemoryDomainConfigService {
         Ok(self.domains.lock().unwrap().values().cloned().collect())
     }
 
+    async fn upsert_domain(&self, request: CreateDomainRequest) -> AppResult<DomainConfig> {
+        let domain_name = normalize_domain_name(&request.domain_name)?;
+        validate_retention_days(request.raw_retention_days.flatten())?;
+        let mut domains = self.domains.lock().unwrap();
+        let domain = domains.entry(domain_name.clone()).or_insert(DomainConfig {
+            domain_name,
+            routing_policy: RoutingPolicy::Allowlist,
+            active: true,
+            raw_retention_days: None,
+            addresses: Vec::new(),
+        });
+
+        if let Some(routing_policy) = request.routing_policy {
+            domain.routing_policy = routing_policy;
+        }
+        if let Some(active) = request.active {
+            domain.active = active;
+        }
+        if let Some(raw_retention_days) = request.raw_retention_days {
+            domain.raw_retention_days = raw_retention_days;
+        }
+
+        Ok(domain.clone())
+    }
+
     async fn update_domain(
         &self,
         domain_name: &str,
@@ -431,6 +509,11 @@ fn normalize_domain_name(domain_name: &str) -> AppResult<String> {
     if domain_name.is_empty() {
         return Err(AppError::Validation("domain name is required".to_string()));
     }
+    let route = parse_route(&format!("postmaster@{domain_name}"))
+        .map_err(|err| AppError::Validation(err.to_string()))?;
+    if route.domain != domain_name {
+        return Err(AppError::Validation("domain name is invalid".to_string()));
+    }
     Ok(domain_name)
 }
 
@@ -470,149 +553,4 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        AcceptedAddress, CreateAddressRequest, DomainConfig, DomainConfigService,
-        InMemoryDomainConfigService, UpdateAddressRequest, UpdateDomainRequest,
-    };
-    use crate::error::AppError;
-    use crate::routing::RoutingPolicy;
-
-    fn service() -> InMemoryDomainConfigService {
-        InMemoryDomainConfigService::with_domains([DomainConfig {
-            domain_name: "ahara.io".to_string(),
-            routing_policy: RoutingPolicy::Allowlist,
-            active: true,
-            raw_retention_days: Some(90),
-            addresses: vec![
-                AcceptedAddress {
-                    local_part: "chris".to_string(),
-                    active: true,
-                    raw_retention_days: None,
-                },
-                AcceptedAddress {
-                    local_part: "contact".to_string(),
-                    active: false,
-                    raw_retention_days: Some(30),
-                },
-            ],
-        }])
-    }
-
-    #[tokio::test]
-    async fn domain_config_lists_configured_domains() {
-        let domains = service().list_domains().await.unwrap();
-
-        assert_eq!(domains.len(), 1);
-        assert_eq!(domains[0].domain_name, "ahara.io");
-        assert_eq!(domains[0].addresses.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn domain_config_updates_policy_and_active_flag() {
-        let updated = service()
-            .update_domain(
-                "AHARA.IO",
-                UpdateDomainRequest {
-                    routing_policy: Some(RoutingPolicy::Catchall),
-                    active: Some(false),
-                    raw_retention_days: Some(Some(180)),
-                },
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(updated.routing_policy, RoutingPolicy::Catchall);
-        assert!(!updated.active);
-        assert_eq!(updated.raw_retention_days, Some(180));
-    }
-
-    #[tokio::test]
-    async fn domain_config_updates_and_clears_raw_retention_days() {
-        let service = service();
-        let cleared = service
-            .update_domain(
-                "ahara.io",
-                UpdateDomainRequest {
-                    routing_policy: None,
-                    active: None,
-                    raw_retention_days: Some(None),
-                },
-            )
-            .await
-            .unwrap();
-        let address = service
-            .update_address(
-                "ahara.io",
-                "contact",
-                UpdateAddressRequest {
-                    active: Some(true),
-                    raw_retention_days: Some(None),
-                },
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(cleared.raw_retention_days, None);
-        assert!(address.active);
-        assert_eq!(address.raw_retention_days, None);
-    }
-
-    #[tokio::test]
-    async fn domain_config_adds_and_reactivates_addresses() {
-        let service = service();
-        let added = service
-            .upsert_address(
-                "ahara.io",
-                CreateAddressRequest {
-                    local_part: "Support".to_string(),
-                    raw_retention_days: Some(14),
-                },
-            )
-            .await
-            .unwrap();
-        let reactivated = service
-            .upsert_address(
-                "ahara.io",
-                CreateAddressRequest {
-                    local_part: "contact".to_string(),
-                    raw_retention_days: None,
-                },
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(added.local_part, "support");
-        assert!(added.active);
-        assert_eq!(added.raw_retention_days, Some(14));
-        assert_eq!(reactivated.local_part, "contact");
-        assert!(reactivated.active);
-    }
-
-    #[tokio::test]
-    async fn domain_config_deactivates_addresses() {
-        let deactivated = service()
-            .deactivate_address("ahara.io", "Chris")
-            .await
-            .unwrap();
-
-        assert_eq!(deactivated.local_part, "chris");
-        assert!(!deactivated.active);
-    }
-
-    #[tokio::test]
-    async fn domain_config_rejects_invalid_accepted_address() {
-        let err = service()
-            .upsert_address(
-                "ahara.io",
-                CreateAddressRequest {
-                    local_part: "contact+tag".to_string(),
-                    raw_retention_days: None,
-                },
-            )
-            .await
-            .unwrap_err();
-
-        assert!(matches!(err, AppError::Validation(_)));
-    }
-}
+mod tests;

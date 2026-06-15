@@ -1,6 +1,7 @@
 import type {
   ExpenseKind,
   ExpenseStatus,
+  FinanceExpense,
   RecurrenceInterval,
   ReceivableStatus,
 } from "./financeTypes";
@@ -26,6 +27,11 @@ export type ReceivableDraft = {
   status: ReceivableStatus;
   external_reference: string;
   notes: string;
+};
+
+export type ExpenseOccurrenceDraft = {
+  amount: string;
+  incurred_on: string;
 };
 
 export function defaultExpenseDraft(): ExpenseDraft {
@@ -55,6 +61,15 @@ export function defaultReceivableDraft(): ReceivableDraft {
   };
 }
 
+export function defaultOccurrenceDraft(
+  expense: FinanceExpense,
+): ExpenseOccurrenceDraft {
+  return {
+    amount: centsToDollars(expense.amount_cents),
+    incurred_on: today(),
+  };
+}
+
 export function dollarsToCents(value: string) {
   const normalized = value.trim().replace(/[$,]/g, "");
   if (!normalized) {
@@ -76,6 +91,10 @@ export function formatMoney(cents: number) {
     currency: "USD",
     style: "currency",
   }).format(cents / 100);
+}
+
+function centsToDollars(cents: number) {
+  return (cents / 100).toFixed(2);
 }
 
 export function formatPercent(bps: number) {

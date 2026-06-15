@@ -134,6 +134,8 @@ pub struct FinanceExpense {
     pub category: String,
     pub expense_kind: ExpenseKind,
     pub recurrence_interval: RecurrenceInterval,
+    pub recurrence_parent_expense_id: Option<String>,
+    pub recurrence_instance_on: Option<String>,
     pub status: ExpenseStatus,
     pub amount_cents: i64,
     pub business_amount_cents: i64,
@@ -236,6 +238,17 @@ pub struct CreateFinanceExpenseRequest {
     pub source_message_id: Option<String>,
     pub source_attachment_id: Option<String>,
     pub source_asset_id: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateFinanceExpenseOccurrenceRequest {
+    pub amount_cents: i64,
+    pub incurred_on: String,
+    pub status: Option<ExpenseStatus>,
+    pub service_period_start: Option<String>,
+    pub service_period_end: Option<String>,
+    pub business_use_percent_bps: Option<i32>,
     pub notes: Option<String>,
 }
 

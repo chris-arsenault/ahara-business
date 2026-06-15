@@ -8,12 +8,10 @@ import {
   CalendarBookingView,
   type CalendarBookingApi,
 } from "./calendarBooking";
+import { ContactsView, type ContactsApi } from "./contacts";
 import { FinanceView, type FinanceApi } from "./finance";
-import { ForwardingAuditView } from "./forwardingAudit";
-import {
-  isForwardingAuditApi,
-  type ForwardingAuditApi,
-} from "./forwardingAuditTypes";
+import { ForwardingView } from "./forwardingAudit";
+import { isForwardingApi, type ForwardingApi } from "./forwardingAuditTypes";
 import { MailboxView, type MailboxApi } from "./mailbox";
 import { RoutingAdmin, type RoutingAdminApi } from "./routingAdmin";
 import { SharedFilesView, type SharedFilesApi } from "./sharedFiles";
@@ -33,8 +31,9 @@ export type AppApi = MailboxApi &
     RoutingAdminApi &
       SharedFilesApi &
       CalendarBookingApi &
+      ContactsApi &
       FinanceApi &
-      ForwardingAuditApi &
+      ForwardingApi &
       AppAuthorizationsApi
   >;
 
@@ -66,7 +65,8 @@ function viewFor(activeView: ActiveView, apiClient: AppApi): ReactNode | null {
       isCalendarBookingApi(apiClient) ? (
         <CalendarBookingView apiClient={apiClient} />
       ) : null,
-    contacts: () => null,
+    contacts: () =>
+      isContactsApi(apiClient) ? <ContactsView apiClient={apiClient} /> : null,
     files: () =>
       isSharedFilesApi(apiClient) ? (
         <SharedFilesView apiClient={apiClient} />
@@ -74,8 +74,8 @@ function viewFor(activeView: ActiveView, apiClient: AppApi): ReactNode | null {
     finance: () =>
       isFinanceApi(apiClient) ? <FinanceView apiClient={apiClient} /> : null,
     forwarding: () =>
-      isForwardingAuditApi(apiClient) ? (
-        <ForwardingAuditView apiClient={apiClient} />
+      isForwardingApi(apiClient) ? (
+        <ForwardingView apiClient={apiClient} />
       ) : null,
     mailbox: () => <MailboxView apiClient={apiClient} />,
     routing: () =>
@@ -90,12 +90,23 @@ function isFinanceApi(apiClient: Partial<FinanceApi>): apiClient is FinanceApi {
   return Boolean(
     apiClient.listFinanceExpenses &&
     apiClient.createFinanceExpense &&
+    apiClient.createFinanceExpenseOccurrence &&
     apiClient.updateFinanceExpense &&
     apiClient.listFinanceReceivables &&
     apiClient.createFinanceReceivable &&
     apiClient.updateFinanceReceivable &&
     apiClient.getFinanceSummary &&
     apiClient.listContacts,
+  );
+}
+
+function isContactsApi(
+  apiClient: Partial<ContactsApi>,
+): apiClient is ContactsApi {
+  return Boolean(
+    apiClient.listContacts &&
+    apiClient.createContact &&
+    apiClient.updateContact,
   );
 }
 
@@ -119,11 +130,10 @@ function isRoutingAdminApi(
 ): apiClient is RoutingAdminApi {
   return Boolean(
     apiClient.listDomains &&
+    apiClient.createDomain &&
     apiClient.updateDomain &&
     apiClient.addAddress &&
-    apiClient.deactivateAddress &&
-    apiClient.listForwardingRules &&
-    apiClient.upsertForwardingRule &&
-    apiClient.deactivateForwardingRule,
+    apiClient.updateAddress &&
+    apiClient.deactivateAddress,
   );
 }

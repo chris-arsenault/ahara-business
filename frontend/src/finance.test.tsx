@@ -25,6 +25,8 @@ const expense: FinanceExpense = {
   category: "cloud",
   expense_kind: "recurring",
   recurrence_interval: "monthly",
+  recurrence_parent_expense_id: null,
+  recurrence_instance_on: null,
   status: "active",
   amount_cents: 12000,
   business_amount_cents: 9000,
@@ -121,6 +123,30 @@ describe("FinanceView", () => {
     expect(calls).toContain("create-expense:AI tools:2000");
     expect(calls).toContain("receivable-status:receivable-1:paid");
   });
+
+  it("records recurring expense occurrences with independent amounts", async () => {
+    const user = userEvent.setup();
+    const calls: string[] = [];
+    render(<FinanceView apiClient={api(calls)} />);
+
+    const expenseArticle =
+      within(await section("Expenses"))
+        .getByText("Cloud hosting")
+        .closest("article") ?? document.body;
+    const amount = within(expenseArticle).getByLabelText("Occurrence amount");
+    const date = within(expenseArticle).getByLabelText("Occurrence date");
+    await user.clear(amount);
+    await user.type(amount, "135.42");
+    await user.clear(date);
+    await user.type(date, "2026-07-01");
+    await user.click(
+      within(expenseArticle).getByRole("button", {
+        name: "Record occurrence",
+      }),
+    );
+
+    expect(calls).toContain("occurrence:expense-1:13542:2026-07-01");
+  });
 });
 
 async function section(name: string) {
@@ -135,6 +161,18 @@ function api(calls: string[] = []): FinanceApi {
     createFinanceExpense: async (request) => {
       calls.push(`create-expense:${request.title}:${request.amount_cents}`);
       return { ...expense, ...request, id: "expense-2" };
+    },
+    createFinanceExpenseOccurrence: async (id, request) => {
+      calls.push(
+        `occurrence:${id}:${request.amount_cents}:${request.incurred_on}`,
+      );
+      return {
+        ...expense,
+        ...request,
+        id: "expense-3",
+        recurrence_parent_expense_id: id,
+        recurrence_instance_on: request.incurred_on,
+      };
     },
     updateFinanceExpense: async (id, request) => ({
       ...expense,

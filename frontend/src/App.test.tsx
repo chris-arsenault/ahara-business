@@ -4,11 +4,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
+import { contactsApi, forwardingApi } from "./App.testSupport";
 import type { AuthClient, AuthState } from "./auth";
 import type { MailboxApi } from "./mailbox";
 import type { RoutingAdminApi } from "./routingAdmin";
 import type { SharedFilesApi } from "./sharedFiles";
-import type { MailboxMessageSummary } from "./types";
+import type { DomainConfig, MailboxMessageSummary } from "./types";
 
 class FakeAuthClient implements AuthClient {
   private listeners = new Set<(state: AuthState) => void>();
@@ -216,27 +217,22 @@ describe("App", () => {
 
   it("opens the routing admin panel from signed-in navigation", async () => {
     const user = userEvent.setup();
+    const routingDomain: DomainConfig = {
+      domain_name: "ahara.io",
+      routing_policy: "allowlist",
+      active: true,
+      raw_retention_days: 365,
+      addresses: [
+        { local_part: "chris", active: true, raw_retention_days: null },
+      ],
+    };
     const apiClient: MailboxApi & Partial<RoutingAdminApi> = {
       fetchMailboxMessages: async () => [message],
-      listDomains: async () => [
-        {
-          domain_name: "ahara.io",
-          routing_policy: "allowlist",
-          active: true,
-          raw_retention_days: 365,
-          addresses: [
-            { local_part: "chris", active: true, raw_retention_days: null },
-          ],
-        },
-      ],
+      listDomains: async () => [routingDomain],
+      createDomain: async () => routingDomain,
       updateDomain: async (_domainName, request) => ({
-        domain_name: "ahara.io",
-        routing_policy: request.routing_policy ?? "allowlist",
-        active: request.active ?? true,
-        raw_retention_days: request.raw_retention_days ?? 365,
-        addresses: [
-          { local_part: "chris", active: true, raw_retention_days: null },
-        ],
+        ...routingDomain,
+        ...request,
       }),
       addAddress: async (_domainName, localPart) => ({
         local_part: localPart,
@@ -252,40 +248,6 @@ describe("App", () => {
         local_part: localPart,
         active: false,
         raw_retention_days: null,
-      }),
-      listForwardingRules: async () => [],
-      upsertForwardingRule: async (request) => ({
-        id: "rule-1",
-        rule_kind: request.local_part ? "address" : "domain",
-        domain_name: request.domain_name,
-        local_part: request.local_part ?? null,
-        address_id: request.local_part
-          ? `${request.domain_name}:${request.local_part}`
-          : null,
-        target_address: request.target_address,
-        target_address_normalized: request.target_address.toLowerCase(),
-        sender_address_normalized:
-          request.sender_address?.toLowerCase() ?? null,
-        plus_tag: request.plus_tag?.toLowerCase() ?? null,
-        require_auth_pass: request.require_auth_pass ?? true,
-        active: true,
-        created_at: null,
-        updated_at: null,
-      }),
-      deactivateForwardingRule: async (ruleId) => ({
-        id: ruleId,
-        rule_kind: "address",
-        domain_name: "ahara.io",
-        local_part: "chris",
-        address_id: "ahara.io:chris",
-        target_address: "target@example.com",
-        target_address_normalized: "target@example.com",
-        sender_address_normalized: null,
-        plus_tag: null,
-        require_auth_pass: true,
-        active: false,
-        created_at: null,
-        updated_at: null,
       }),
     };
     renderApp(
@@ -303,6 +265,48 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Routing" }));
 
     expect(await screen.findByText("ahara.io")).toBeInTheDocument();
+  });
+
+  it("opens the contacts panel from signed-in navigation", async () => {
+    const user = userEvent.setup();
+    renderApp(
+      new FakeAuthClient({
+        status: "signed-in",
+        user: {
+          subject: null,
+          email: "chris@example.test",
+          username: null,
+        },
+      }),
+      contactsApi(message),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Contacts" }));
+
+    expect(await screen.findByText("Chris")).toBeInTheDocument();
+    expect(screen.getAllByText("chris@example.test").length).toBeGreaterThan(0);
+  });
+
+  it("opens the forwarding panel from signed-in navigation", async () => {
+    const user = userEvent.setup();
+    renderApp(
+      new FakeAuthClient({
+        status: "signed-in",
+        user: {
+          subject: null,
+          email: "chris@example.test",
+          username: null,
+        },
+      }),
+      forwardingApi(message),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Forwarding" }));
+
+    expect(
+      await screen.findByText("No forwarding rules yet"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No matched messages yet")).toBeInTheDocument();
   });
 
   it("opens the shared files panel from signed-in navigation", async () => {

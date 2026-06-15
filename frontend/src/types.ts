@@ -124,7 +124,6 @@ export type UpsertAppAuthorizationUserRequest = {
 }>;
 
 export type RoutingPolicy = "allowlist" | "catchall";
-
 export type DomainConfig = {
   domain_name: string;
   routing_policy: RoutingPolicy;
@@ -132,18 +131,17 @@ export type DomainConfig = {
   raw_retention_days: number | null;
   addresses: AcceptedAddress[];
 };
-
 export type AcceptedAddress = {
   local_part: string;
   active: boolean;
   raw_retention_days: number | null;
 };
-
 export type UpdateDomainRequest = Partial<{
   routing_policy: RoutingPolicy;
   active: boolean;
   raw_retention_days: number | null;
 }>;
+export type CreateDomainRequest = { domain_name: string } & UpdateDomainRequest;
 
 export type UpdateAddressRequest = Partial<{
   active: boolean;

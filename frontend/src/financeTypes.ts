@@ -20,6 +20,8 @@ export type FinanceExpense = {
   category: string;
   expense_kind: ExpenseKind;
   recurrence_interval: RecurrenceInterval;
+  recurrence_parent_expense_id: string | null;
+  recurrence_instance_on: string | null;
   status: ExpenseStatus;
   amount_cents: number;
   business_amount_cents: number;
@@ -111,6 +113,17 @@ export type CreateFinanceExpenseRequest = {
   source_message_id: string | null;
   source_attachment_id: string | null;
   source_asset_id: string | null;
+  notes: string | null;
+}>;
+
+export type CreateFinanceExpenseOccurrenceRequest = {
+  amount_cents: number;
+  incurred_on: string;
+} & Partial<{
+  status: ExpenseStatus;
+  service_period_start: string | null;
+  service_period_end: string | null;
+  business_use_percent_bps: number;
   notes: string | null;
 }>;
 

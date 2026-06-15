@@ -18,6 +18,7 @@ import type {
   CreateBookingRequest,
   CreateCalendarEventRequest,
   CreateContactRequest,
+  CreateDomainRequest,
   DomainConfig,
   ForwardingMessageStatus,
   ForwardingRule,
@@ -170,6 +171,13 @@ export class ApiClient {
 
   listDomains() {
     return this.request<DomainConfig[]>("/domains");
+  }
+
+  createDomain(request: CreateDomainRequest) {
+    return this.request<DomainConfig>("/domains", {
+      method: "POST",
+      body: request,
+    });
   }
 
   updateDomain(domainName: string, request: UpdateDomainRequest) {

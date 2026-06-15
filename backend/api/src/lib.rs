@@ -24,7 +24,7 @@ use shared::contacts::{
 };
 use shared::db::{DbPool, connect_pool};
 use shared::domain_config::{
-    AcceptedAddress, CreateAddressRequest, DomainConfig, DomainConfigService,
+    AcceptedAddress, CreateAddressRequest, CreateDomainRequest, DomainConfig, DomainConfigService,
     PgDomainConfigService, UpdateAddressRequest, UpdateDomainRequest,
 };
 use shared::error::{AppError, AppResult};
@@ -106,7 +106,7 @@ pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/me", get(me))
-        .route("/domains", get(list_domains))
+        .route("/domains", get(list_domains).post(create_domain))
         .route(
             "/domains/{domain_name}",
             axum::routing::patch(update_domain),
@@ -187,6 +187,15 @@ async fn list_domains(
 ) -> Result<Json<Vec<DomainConfig>>, ApiError> {
     require_user(&state, &headers).await?;
     Ok(Json(state.domain_config.list_domains().await?))
+}
+
+async fn create_domain(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Json(request): Json<CreateDomainRequest>,
+) -> Result<Json<DomainConfig>, ApiError> {
+    require_user(&state, &headers).await?;
+    Ok(Json(state.domain_config.upsert_domain(request).await?))
 }
 
 async fn update_domain(
@@ -560,6 +569,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn domains_route_creates_configured_domains() {
+        let response = authenticated_request(
+            "POST",
+            "/domains",
+            Some(json!({
+                "domain_name": "Example.TEST",
+                "routing_policy": "catchall",
+                "active": false,
+                "raw_retention_days": 30
+            })),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload = response_json(response).await;
+        assert_eq!(payload["domain_name"], "example.test");
+        assert_eq!(payload["routing_policy"], "catchall");
+        assert_eq!(payload["active"], false);
+        assert_eq!(payload["raw_retention_days"], 30);
+        assert_eq!(payload["addresses"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
     async fn domains_route_updates_policy_and_active_flag() {
         let response = authenticated_request(
             "PATCH",
@@ -737,6 +769,26 @@ mod tests {
         assert_eq!(
             updated["primary_address_normalized"],
             "chris+a@example.test"
+        );
+    }
+
+    #[tokio::test]
+    async fn contacts_route_clears_primary_address() {
+        let response = authenticated_request(
+            "PATCH",
+            "/contacts/contact-1",
+            Some(json!({
+                "primary_address": null
+            })),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let updated = response_json(response).await;
+        assert_eq!(updated["primary_address"], serde_json::Value::Null);
+        assert_eq!(
+            updated["primary_address_normalized"],
+            serde_json::Value::Null
         );
     }
 
@@ -1251,6 +1303,15 @@ mod tests {
         .await;
         assert_eq!(updated_expense.status(), StatusCode::OK);
         assert_eq!(response_json(updated_expense).await["status"], "ended");
+
+        let occurrence = authenticated_request(
+            "POST",
+            "/finance/expenses/expense-1/occurrences",
+            Some(json!({ "amount_cents": 13542, "incurred_on": "2026-07-01" })),
+        )
+        .await;
+        assert_eq!(occurrence.status(), StatusCode::OK);
+        assert_eq!(response_json(occurrence).await["amount_cents"], 13542);
 
         let created_receivable = authenticated_request(
             "POST",
