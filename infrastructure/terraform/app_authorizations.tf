@@ -10,6 +10,7 @@ resource "aws_dynamodb_table_item" "seed_chris_app_authorization" {
       M = {
         "ahara-business-app" = { S = "admin" }
         canonry              = { S = "admin" }
+        "linkdrop"           = { S = "admin" }
         svap                 = { S = "admin" }
       }
     }
