@@ -1,0 +1,18 @@
+{
+  "name": "Ahara Mail",
+  "short_name": "Ahara",
+  "description": "Text-only mail foundation for Ahara business systems.",
+  "id": "/",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f1ebdd",
+  "theme_color": "#232014",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

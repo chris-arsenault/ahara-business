@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Ahara Mail</title>
+  <rect width="512" height="512" rx="96" fill="#f1ebdd" />
+  <rect
+    x="64"
+    y="104"
+    width="384"
+    height="320"
+    rx="36"
+    fill="#232014"
+  />
+  <path
+    fill="#f3eeda"
+    d="M94 153h324v18L256 288 94 171v-18Zm0 66 116 84L94 379V219Zm324 0v160l-116-76 116-84ZM256 331l31-22 116 74H109l116-74 31 22Z"
+  />
+  <circle cx="366" cy="360" r="76" fill="#b23a26" />
+  <path
+    fill="#f1ebdd"
+    d="M331 359c0-27 16-44 37-44 14 0 25 7 31 18l-16 10c-3-6-8-9-15-9-10 0-16 9-16 25 0 17 7 26 17 26 7 0 12-4 16-12l16 9c-6 14-18 22-33 22-21 0-37-17-37-45Z"
+  />
+</svg>

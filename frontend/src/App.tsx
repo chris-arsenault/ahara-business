@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import { AppMark } from "./appMark";
 import { WorkspaceView, type ActiveView, type AppApi } from "./appWorkspace";
 import { createApiClient } from "./api";
 import { createAuthClient, type AuthClient, type AuthState } from "./auth";
@@ -68,6 +69,7 @@ export function App({ authClient: injectedAuth, apiClient }: AppProps) {
   if (authState.status === "loading") {
     return (
       <main className="auth-screen" aria-busy="true">
+        <AppMark className="auth-mark" size={50} />
         <p>{config.productName}</p>
         <h1>Loading</h1>
       </main>
@@ -104,6 +106,7 @@ export function App({ authClient: injectedAuth, apiClient }: AppProps) {
   if (authState.status === "error") {
     return (
       <main className="auth-screen" role="alert">
+        <AppMark className="auth-mark" size={50} />
         <AlertCircle aria-hidden="true" size={20} />
         <h1>Auth error</h1>
         <p>{authState.message}</p>
@@ -115,7 +118,7 @@ export function App({ authClient: injectedAuth, apiClient }: AppProps) {
     <main className="app-layout">
       <aside className="app-sidebar" aria-label="Application navigation">
         <div className="brand-lockup">
-          <Mail aria-hidden="true" size={20} />
+          <AppMark className="brand-mark" />
           <span>{config.productName}</span>
         </div>
         <nav className="app-nav">
@@ -203,6 +206,7 @@ function MfaCodeScreen({
 
   return (
     <main className="auth-screen">
+      <AppMark className="auth-mark" size={50} />
       <p>{productName}</p>
       <h1>Verify sign in</h1>
       <form className="auth-form" onSubmit={handleSubmit}>
@@ -275,6 +279,7 @@ function MfaSetupScreen({
 
   return (
     <main className="auth-screen">
+      <AppMark className="auth-mark" size={50} />
       <p>{productName}</p>
       <h1>Set up MFA</h1>
       <form className="auth-form" onSubmit={handleSubmit}>
@@ -346,6 +351,7 @@ function SignInScreen({
 
   return (
     <main className="auth-screen">
+      <AppMark className="auth-mark" size={50} />
       <p>{productName}</p>
       <h1>Sign in</h1>
       <form className="auth-form" onSubmit={handleSubmit}>

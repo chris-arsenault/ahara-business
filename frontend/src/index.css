@@ -27,6 +27,7 @@
   --font-mono:
     "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
+  color-scheme: light;
   color: var(--ink);
   background: var(--paper);
   font-family: var(--font-ui);
@@ -41,6 +42,8 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  text-rendering: optimizelegibility;
+  -webkit-font-smoothing: antialiased;
   /* Laid-paper texture: faint chain lines across the whole field. */
   background-image: repeating-linear-gradient(
     0deg,
@@ -84,6 +87,19 @@ button {
   }
 }
 
+@keyframes seal-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.78;
+    transform: scale(0.9);
+  }
+}
+
 /* ---------- Auth: the letterhead ---------- */
 
 .auth-screen {
@@ -93,6 +109,40 @@ button {
   justify-items: start;
   gap: 14px;
   padding: clamp(32px, 9vw, 96px);
+  isolation: isolate;
+}
+
+.app-mark {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.app-mark-paper {
+  fill: var(--paper);
+}
+
+.app-mark-spine {
+  fill: var(--spine);
+}
+
+.app-mark-envelope {
+  fill: var(--spine-bright);
+}
+
+.app-mark-seal {
+  fill: var(--wax);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.auth-mark {
+  margin-bottom: 2px;
+  filter: drop-shadow(3px 4px 0 rgb(33 29 20 / 0.08));
+  animation: rise 0.45s ease-out backwards;
+}
+
+.auth-screen[aria-busy="true"] .app-mark-seal {
+  animation: seal-pulse 1.4s ease-in-out infinite;
 }
 
 .auth-screen p,
@@ -308,6 +358,8 @@ button {
 
 .app-sidebar {
   min-height: 100vh;
+  position: sticky;
+  top: 0;
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 26px;
@@ -333,7 +385,7 @@ button {
 }
 
 .brand-lockup {
-  gap: 10px;
+  gap: 11px;
   min-height: 36px;
   color: var(--spine-bright);
   font-family: var(--font-display);
@@ -342,8 +394,10 @@ button {
   letter-spacing: 0.01em;
 }
 
-.brand-lockup svg {
-  color: var(--wax);
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  filter: drop-shadow(1px 2px 0 rgb(0 0 0 / 0.18));
 }
 
 .app-nav {
@@ -353,6 +407,7 @@ button {
 }
 
 .nav-button {
+  width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -377,7 +432,9 @@ button {
 .nav-button[data-active="true"] {
   color: var(--spine-bright);
   background: rgb(243 238 218 / 0.09);
-  box-shadow: inset 3px 0 0 var(--wax);
+  box-shadow:
+    inset 3px 0 0 var(--wax),
+    inset 0 0 0 1px rgb(243 238 218 / 0.06);
   font-weight: 600;
 }
 
@@ -392,8 +449,19 @@ button {
   font-size: 0.75rem;
 }
 
+.account-strip::before {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--wax);
+  box-shadow: 0 0 0 2px rgb(178 58 38 / 0.18);
+  content: "";
+}
+
 .account-strip span {
   min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -886,16 +954,33 @@ button {
 .error-state {
   min-height: 96px;
   display: grid;
-  place-items: center;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
   padding: 24px;
   color: var(--ink-faint);
   font-family: var(--font-display);
   font-style: italic;
   font-size: 1.0625rem;
+  text-align: center;
+}
+
+.empty-state::before,
+.error-state::before {
+  width: 48px;
+  height: 3px;
+  border-top: 1px solid var(--rule-strong);
+  border-bottom: 1px solid var(--rule);
+  content: "";
 }
 
 .error-state {
   color: var(--wax-deep);
+}
+
+.error-state::before {
+  border-top-color: var(--wax-deep);
+  border-bottom-color: rgb(178 58 38 / 0.35);
 }
 
 .compact-error {
@@ -916,15 +1001,30 @@ button {
   font-size: 0.9375rem;
 }
 
+.compact-empty::before {
+  content: none;
+}
+
 .detail-empty {
   min-height: 100%;
   display: grid;
-  place-items: center;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
   border-left: 1px solid var(--rule-strong);
   color: var(--ink-faint);
   font-family: var(--font-display);
   font-style: italic;
   font-size: 1.0625rem;
+  text-align: center;
+}
+
+.detail-empty::before {
+  width: 48px;
+  height: 3px;
+  border-top: 1px solid var(--rule-strong);
+  border-bottom: 1px solid var(--rule);
+  content: "";
 }
 
 /* ---------- Message detail ---------- */
@@ -1662,6 +1762,7 @@ button {
 
   .app-sidebar {
     min-height: auto;
+    position: static;
     grid-template-columns: 1fr;
     gap: 12px;
     padding: 14px 16px;
