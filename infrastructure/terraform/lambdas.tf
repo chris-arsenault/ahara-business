@@ -3,7 +3,7 @@ module "ctx" {
 }
 
 module "api" {
-  source   = "../../../ahara-tf-patterns/modules/alb-api"
+  source   = "git::https://github.com/chris-arsenault/ahara-tf-patterns.git//modules/alb-api"
   prefix   = local.prefix
   hostname = local.api_hostname
 
@@ -27,7 +27,7 @@ module "api" {
 }
 
 module "ingest" {
-  source   = "../../../ahara-tf-patterns/modules/lambda"
+  source   = "git::https://github.com/chris-arsenault/ahara-tf-patterns.git//modules/lambda"
   name     = "${local.prefix}-ingest"
   binary   = "${path.module}/../../backend/target/lambda/ingest/bootstrap"
   role_arn = module.api.role_arn
@@ -38,7 +38,7 @@ module "ingest" {
 }
 
 module "receipt_gate" {
-  source   = "../../../ahara-tf-patterns/modules/lambda"
+  source   = "git::https://github.com/chris-arsenault/ahara-tf-patterns.git//modules/lambda"
   name     = "${local.prefix}-receipt-gate"
   binary   = "${path.module}/../../backend/target/lambda/receipt-gate/bootstrap"
   role_arn = module.api.role_arn
@@ -49,7 +49,7 @@ module "receipt_gate" {
 }
 
 module "send_worker" {
-  source   = "../../../ahara-tf-patterns/modules/lambda"
+  source   = "git::https://github.com/chris-arsenault/ahara-tf-patterns.git//modules/lambda"
   name     = "${local.prefix}-send-worker"
   binary   = "${path.module}/../../backend/target/lambda/send-worker/bootstrap"
   role_arn = module.api.role_arn
@@ -60,7 +60,7 @@ module "send_worker" {
 }
 
 module "feedback_handler" {
-  source   = "../../../ahara-tf-patterns/modules/lambda"
+  source   = "git::https://github.com/chris-arsenault/ahara-tf-patterns.git//modules/lambda"
   name     = "${local.prefix}-feedback-handler"
   binary   = "${path.module}/../../backend/target/lambda/feedback-handler/bootstrap"
   role_arn = module.api.role_arn
