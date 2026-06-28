@@ -1,6 +1,7 @@
 import { config } from "./config";
 import { attachAccessApi, type AccessApiSurface } from "./accessApi";
 import { attachFinanceApi, type FinanceApiSurface } from "./financeApi";
+import { attachOpsApi, type OpsApiSurface } from "./opsApi";
 import {
   authenticatedRequest,
   ApiClientError,
@@ -356,8 +357,8 @@ export class ApiClient {
 }
 
 export function createApiClient(options: ApiClientOptions) {
-  return attachFinanceApi(
-    attachAccessApi(new ApiClient(options), options),
+  return attachOpsApi(
+    attachFinanceApi(attachAccessApi(new ApiClient(options), options), options),
     options,
   );
 }
@@ -367,4 +368,7 @@ function queryString(params: URLSearchParams) {
   return value ? `?${value}` : "";
 }
 
-export type AppApiClient = ApiClient & AccessApiSurface & FinanceApiSurface;
+export type AppApiClient = ApiClient &
+  AccessApiSurface &
+  FinanceApiSurface &
+  OpsApiSurface;

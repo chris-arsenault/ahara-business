@@ -13,6 +13,7 @@ import { FinanceView, type FinanceApi } from "./finance";
 import { ForwardingView } from "./forwardingAudit";
 import { isForwardingApi, type ForwardingApi } from "./forwardingAuditTypes";
 import { MailboxView, type MailboxApi } from "./mailbox";
+import { OpsDashboardView, type OpsDashboardApi } from "./opsDashboard";
 import { RoutingAdmin, type RoutingAdminApi } from "./routingAdmin";
 import { SharedFilesView, type SharedFilesApi } from "./sharedFiles";
 import { isSharedFilesApi } from "./sharedFilesTypes";
@@ -23,6 +24,7 @@ export type ActiveView =
   | "authorizations"
   | "calendar"
   | "finance"
+  | "operations"
   | "routing"
   | "forwarding"
   | "files";
@@ -33,6 +35,7 @@ export type AppApi = MailboxApi &
       CalendarBookingApi &
       ContactsApi &
       FinanceApi &
+      OpsDashboardApi &
       ForwardingApi &
       AppAuthorizationsApi
   >;
@@ -78,12 +81,24 @@ function viewFor(activeView: ActiveView, apiClient: AppApi): ReactNode | null {
         <ForwardingView apiClient={apiClient} />
       ) : null,
     mailbox: () => <MailboxView apiClient={apiClient} />,
+    operations: () =>
+      isOpsDashboardApi(apiClient) ? (
+        <OpsDashboardView apiClient={apiClient} />
+      ) : null,
     routing: () =>
       isRoutingAdminApi(apiClient) ? (
         <RoutingAdmin apiClient={apiClient} />
       ) : null,
   };
   return views[activeView]();
+}
+
+function isOpsDashboardApi(
+  apiClient: Partial<OpsDashboardApi>,
+): apiClient is OpsDashboardApi {
+  return Boolean(
+    apiClient.listOperationSummaries && apiClient.listOperationEvents,
+  );
 }
 
 function isFinanceApi(apiClient: Partial<FinanceApi>): apiClient is FinanceApi {

@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   AlertCircle,
+  Activity,
   CalendarDays,
   FolderLock,
   Forward,
@@ -40,6 +41,7 @@ const navItems: NavItem[] = [
   { icon: ShieldCheck, label: "Authorizations", view: "authorizations" },
   { icon: CalendarDays, label: "Calendar", view: "calendar" },
   { icon: ReceiptText, label: "Finance", view: "finance" },
+  { icon: Activity, label: "Operations", view: "operations" },
   { icon: Route, label: "Routing", view: "routing" },
   { icon: Forward, label: "Forwarding", view: "forwarding" },
 ];

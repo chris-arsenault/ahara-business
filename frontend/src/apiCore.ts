@@ -14,6 +14,7 @@ export type ApiClientOptions = {
 } & Partial<{
   baseUrl: string;
   accessBaseUrl: string;
+  opsBaseUrl: string;
   fetchImpl: FetchLike;
 }>;
 

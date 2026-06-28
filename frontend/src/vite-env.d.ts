@@ -2,6 +2,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL: string;
+  readonly VITE_ACCESS_API_BASE_URL: string;
+  readonly VITE_OPS_API_BASE_URL: string;
   readonly VITE_APP_BASE_URL: string;
   readonly VITE_PRODUCT_NAME: string;
   readonly VITE_COGNITO_USER_POOL_ID: string;
