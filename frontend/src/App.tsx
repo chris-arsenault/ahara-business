@@ -1,7 +1,6 @@
 /* eslint-disable max-lines-per-function, sonarjs/void-use */
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
-  AlertCircle,
   Activity,
   CalendarDays,
   FolderLock,
@@ -21,6 +20,7 @@ import { WorkspaceView, type ActiveView, type AppApi } from "./appWorkspace";
 import { createApiClient } from "./api";
 import { createAuthClient, type AuthClient, type AuthState } from "./auth";
 import { config } from "./config";
+import { SignInScreen } from "./signInScreen";
 import { buildTotpSetupUri } from "./totp";
 
 type AppProps = Partial<{
@@ -80,7 +80,11 @@ export function App({ authClient: injectedAuth, apiClient }: AppProps) {
 
   if (authState.status === "signed-out") {
     return (
-      <SignInScreen authClient={authClient} productName={config.productName} />
+      <SignInScreen
+        authClient={authClient}
+        initialErrorMessage={null}
+        productName={config.productName}
+      />
     );
   }
 
@@ -107,12 +111,11 @@ export function App({ authClient: injectedAuth, apiClient }: AppProps) {
 
   if (authState.status === "error") {
     return (
-      <main className="auth-screen" role="alert">
-        <AppMark className="auth-mark" size={50} />
-        <AlertCircle aria-hidden="true" size={20} />
-        <h1>Auth error</h1>
-        <p>{authState.message}</p>
-      </main>
+      <SignInScreen
+        authClient={authClient}
+        initialErrorMessage={authState.message}
+        productName={config.productName}
+      />
     );
   }
 
@@ -318,73 +321,6 @@ function MfaSetupScreen({
         >
           <LogIn aria-hidden="true" size={18} />
           Verify
-        </button>
-      </form>
-    </main>
-  );
-}
-
-function SignInScreen({
-  authClient,
-  productName,
-}: {
-  authClient: AuthClient;
-  productName: string;
-}) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setErrorMessage(null);
-    setSubmitting(true);
-    try {
-      await authClient.signIn(username.trim(), password);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Authentication failed",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <main className="auth-screen">
-      <AppMark className="auth-mark" size={50} />
-      <p>{productName}</p>
-      <h1>Sign in</h1>
-      <form className="auth-form" onSubmit={handleSubmit}>
-        <label>
-          <span>Username</span>
-          <input
-            autoComplete="username"
-            name="username"
-            type="text"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-          />
-        </label>
-        <label>
-          <span>Password</span>
-          <input
-            autoComplete="current-password"
-            name="password"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </label>
-        {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
-        <button
-          className="primary-button"
-          disabled={submitting || !username.trim() || !password}
-          type="submit"
-        >
-          <LogIn aria-hidden="true" size={18} />
-          Sign in
         </button>
       </form>
     </main>

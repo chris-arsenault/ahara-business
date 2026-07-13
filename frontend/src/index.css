@@ -231,6 +231,17 @@ button {
   font-weight: 600;
 }
 
+.auth-error[role="alert"] {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.auth-error[role="alert"] svg {
+  flex: 0 0 auto;
+  color: currentcolor;
+}
+
 .mfa-qr {
   width: fit-content;
   border: 1px solid var(--rule-strong);
