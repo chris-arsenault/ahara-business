@@ -14,9 +14,13 @@ pub const MAIL_MODEL_MIGRATION: &str = concat!(
     "\n",
     include_str!("../../../db/migrations/005_recurring_expense_occurrences.sql"),
     "\n",
-    include_str!("../../../db/migrations/006_support_mail_routing.sql")
+    include_str!("../../../db/migrations/006_support_mail_routing.sql"),
+    "\n",
+    include_str!("../../../db/migrations/007_initial_mail_routing.sql")
 );
 pub const MAIL_MODEL_ROLLBACK: &str = concat!(
+    include_str!("../../../db/migrations/rollback/007_initial_mail_routing.sql"),
+    "\n",
     include_str!("../../../db/migrations/rollback/006_support_mail_routing.sql"),
     "\n",
     include_str!("../../../db/migrations/rollback/005_recurring_expense_occurrences.sql"),

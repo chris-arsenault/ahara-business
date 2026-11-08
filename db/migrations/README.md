@@ -12,6 +12,10 @@ tax/audit expense allocation and manual client receivable tracking.
 `005_recurring_expense_occurrences.sql` links recurring expense instances back
 to their parent recurring expense. `006_support_mail_routing.sql` activates
 `support@ahara.io` for existing domains; its rollback deactivates the address
-while preserving existing references. The
-`rollback/` directory contains the matching rollbacks, and `seed/` contains the
-idempotent initial `ahara.io` routing seed.
+while preserving existing references. `007_initial_mail_routing.sql` installs
+missing initial `ahara.io` domain and address records during normal deployment,
+without changing existing operator settings. Its rollback retains routing data
+to preserve delivery and references.
+
+The `rollback/` directory contains the matching rollbacks. The legacy `seed/`
+fixture is optional; deployment does not need it to initialize mail routing.

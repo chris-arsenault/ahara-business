@@ -4,6 +4,9 @@ All notable user-visible changes are recorded here.
 
 ## Unreleased
 
+- Initialize missing mail domain and address routing during normal migrations,
+  preserving existing operator settings.
+- Update `async-trait` to fix generated-code Clippy errors blocking deployment.
 - Added `support@ahara.io` to SES receipt routing, receipt-gate recipients, and
   application address routing, including a migration for existing deployments.
 

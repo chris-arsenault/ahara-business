@@ -3,6 +3,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+mod initial_routing;
 mod support_routing;
 
 static CONTAINER_SEQUENCE: AtomicU64 = AtomicU64::new(0);

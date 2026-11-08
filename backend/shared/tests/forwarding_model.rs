@@ -152,20 +152,15 @@ fn forwarding_rules_model_supports_address_scoped_active_rule_lookup() {
         r#"
 {MAIL_MODEL_MIGRATION}
 
-WITH domain_row AS (
-    INSERT INTO domains (domain_name, routing_policy, active)
-    VALUES ('ahara.io', 'allowlist', true)
-    RETURNING id
-),
-contact_address AS (
-    INSERT INTO addresses (domain_id, local_part, active)
-    SELECT id, 'contact', true FROM domain_row
-    RETURNING id, domain_id
+WITH contact_address AS (
+    SELECT a.id, a.domain_id FROM addresses a
+    JOIN domains d ON d.id = a.domain_id
+    WHERE d.domain_name = 'ahara.io' AND a.local_part = 'contact'
 ),
 chris_address AS (
-    INSERT INTO addresses (domain_id, local_part, active)
-    SELECT domain_id, 'chris', true FROM contact_address
-    RETURNING id
+    SELECT a.id FROM addresses a
+    JOIN domains d ON d.id = a.domain_id
+    WHERE d.domain_name = 'ahara.io' AND a.local_part = 'chris'
 ),
 address_rule AS (
     INSERT INTO forwarding_rules (
