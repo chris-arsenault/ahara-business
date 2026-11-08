@@ -26,8 +26,8 @@ Confirm these before sending mail:
 - SES identity verification and DKIM verification are successful for
   `ahara.io`.
 - The active receipt rule set matches the Terraform output.
-- The receipt rule recipients are address-scoped to `chris@ahara.io` and
-  `contact@ahara.io`.
+- The receipt rule recipients are address-scoped to `chris@ahara.io`,
+  `contact@ahara.io`, and `support@ahara.io`.
 - The MX record for `ahara.io` points at the SES inbound endpoint.
 
 ## Controlled Receive

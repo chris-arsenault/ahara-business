@@ -10,6 +10,8 @@ retention, and forwarding controls. `003_calendar_booking.sql` adds internal
 calendar events and booking records. `004_tax_audit_finance.sql` adds
 tax/audit expense allocation and manual client receivable tracking.
 `005_recurring_expense_occurrences.sql` links recurring expense instances back
-to their parent recurring expense. The
+to their parent recurring expense. `006_support_mail_routing.sql` activates
+`support@ahara.io` for existing domains; its rollback deactivates the address
+while preserving existing references. The
 `rollback/` directory contains the matching rollbacks, and `seed/` contains the
 idempotent initial `ahara.io` routing seed.

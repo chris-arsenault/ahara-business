@@ -23,6 +23,7 @@ locals {
   accepted_mail_recipients = [
     "chris@${local.mail_domain}",
     "contact@${local.mail_domain}",
+    "support@${local.mail_domain}",
   ]
 
   receipt_gate_per_recipient_hourly_limit = 120

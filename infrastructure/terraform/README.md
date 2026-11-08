@@ -26,7 +26,7 @@ Current modules:
 | `ssm.tf` | Shared database SSM parameter lookups |
 | `outputs.tf` | Website, API, Cognito, raw mail bucket, SES identity, receipt rule set, feedback topic, and alarm topic outputs |
 
-The active receipt rule set routes `chris@ahara.io` and `contact@ahara.io`
+The active receipt rule set routes `chris@ahara.io`, `contact@ahara.io`, and `support@ahara.io`
 through the receipt gate, raw-mail S3 storage, and async ingest Lambda. Route 53
 publishes the domain MX record for SES inbound in `us-east-1`.
 

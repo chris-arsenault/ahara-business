@@ -2,6 +2,11 @@
 
 All notable user-visible changes are recorded here.
 
+## Unreleased
+
+- Added `support@ahara.io` to SES receipt routing, receipt-gate recipients, and
+  application address routing, including a migration for existing deployments.
+
 ## v0.1.0 - 2026-06-12
 
 ### Mail

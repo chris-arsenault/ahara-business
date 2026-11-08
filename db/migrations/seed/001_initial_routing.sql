@@ -16,7 +16,8 @@ FROM routed_domain
 CROSS JOIN (
     VALUES
         ('chris'),
-        ('contact')
+        ('contact'),
+        ('support')
 ) AS accepted(local_part)
 ON CONFLICT (domain_id, local_part) DO UPDATE SET
     active = EXCLUDED.active,

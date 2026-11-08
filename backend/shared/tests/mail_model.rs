@@ -3,6 +3,8 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+mod support_routing;
+
 static CONTAINER_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 struct DockerPostgres {
@@ -281,11 +283,12 @@ fn mail_model_migration_seed_and_rollback_round_trip() {
          FROM addresses
          JOIN domains ON domains.id = addresses.domain_id
          WHERE domains.domain_name = 'ahara.io'
-           AND addresses.local_part IN ('chris', 'contact')",
+           AND addresses.local_part IN ('chris', 'contact', 'support')
+           AND addresses.active",
     );
 
     assert_eq!(domain_count, 1);
-    assert_eq!(address_count, 2);
+    assert_eq!(address_count, 3);
     println!(
         "seed applied twice without duplicates: domains={domain_count}, addresses={address_count}"
     );

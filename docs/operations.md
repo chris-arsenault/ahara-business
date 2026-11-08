@@ -33,8 +33,8 @@ Use the controlled [smoke check](smoke-check.md) after deployment.
 
 ### Inbound flood controls
 
-- SES receipt routing is address-scoped to `chris@ahara.io` and
-  `contact@ahara.io`; SES also matches plus-address labels for those explicit
+- SES receipt routing is address-scoped to `chris@ahara.io`, `contact@ahara.io`,
+  and `support@ahara.io`; SES also matches plus-address labels for those explicit
   addresses.
 - The pre-S3 receipt gate runs synchronously before storage. It stops unknown
   recipients and applies count-only rolling limits of 120 messages per accepted

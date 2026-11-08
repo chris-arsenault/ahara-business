@@ -67,7 +67,7 @@ Outbound flow:
 - `catchall` accepts all local parts for an active domain.
 - Plus-address labels resolve to the base local part and are retained on the
   stored message as `plus_tag`.
-- The deployed seed configures `ahara.io` with active `chris` and `contact`
+- The deployed seed configures `ahara.io` with active `chris`, `contact`, and `support`
   local parts.
 
 ## Ingest
