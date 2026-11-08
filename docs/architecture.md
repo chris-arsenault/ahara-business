@@ -38,11 +38,15 @@ attachment metadata, applies spam/virus disposition, updates threads, and
 creates normal mailbox rows only for accepted messages.
 
 Outbound compose, reply, and forwarding requests create `messages` and
-`outbound_work` rows. Compose and reply can include attachment payloads, which
-are stored privately until the send worker builds outbound MIME. The send
+`outbound_work` rows. Compose and reply include upload IDs after the browser PUTs
+files to private S3 through constrained 15-minute presigned URLs. The API checks
+ownership and aggregate size, verifies uploaded size/type/SHA-256, and copies the
+verified version to `attachments/files/`. Queue payloads retain the copied key
+and version; older database base64 payloads remain readable. The send
 worker claims queued work in batches, checks suppressions before send,
 constructs text/plain or multipart/mixed MIME with threading headers, sends
-through SES, and records retry or final status. SES bounce and complaint
+through SES v2, and records retry or final status. The 15 MiB aggregate attachment
+budget fits its 40 MB encoded-message ceiling. SES bounce and complaint
 notifications flow through SNS to the feedback handler, which updates message
 status and recipient suppressions.
 
@@ -50,9 +54,18 @@ status and recipient suppressions.
 
 The frontend renders stored plaintext only. Sender-controlled HTML is stripped
 at ingest, links are inert in the mailbox UI, display names and attachment
-filenames are treated as untrusted display data, and inbound attachment bodies
-are served through authenticated API reads from retained private raw MIME.
+filenames are treated as untrusted display data. Downloads require authenticated
+API authorization and use short-lived private S3 links. Inbound and legacy
+database payloads are extracted server-side into a temporary download prefix;
+the API never returns file bytes. S3 forces binary attachment disposition.
 Quarantined or rejected mail is excluded from normal mailbox reads.
+
+The mailbox uses a compact conversation list and independently scrolling reader.
+Threads include sent/queued/failed replies alongside accepted incoming messages;
+earlier messages collapse and delivery status stays visible. Security checks use
+one expandable disclosure per received message. Compose uses a focused dialog;
+reply stays inline. Both editors upload files directly and retain failed-send
+drafts. Closing compose preserves its current draft; Discard clears it.
 
 The shared ALB validates Cognito tokens on authenticated API routes, and the API
 also verifies Cognito access tokens before serving app data. `/health` is the

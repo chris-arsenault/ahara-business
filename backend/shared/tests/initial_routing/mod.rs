@@ -6,7 +6,7 @@ const ROLLBACK: &str =
     include_str!("../../../../db/migrations/rollback/007_initial_mail_routing.sql");
 
 fn previous_migrations() -> &'static str {
-    MAIL_MODEL_MIGRATION.strip_suffix(MIGRATION).unwrap()
+    MAIL_MODEL_MIGRATION.split_once(MIGRATION).unwrap().0
 }
 
 #[test]

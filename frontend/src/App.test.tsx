@@ -196,7 +196,7 @@ describe("App", () => {
 
     expect(await screen.findByText("Invoice")).toBeInTheDocument();
     expect(screen.getByText("sender@example.test")).toBeInTheDocument();
-    expect(screen.getByText("pass")).toBeInTheDocument();
+    expect(screen.queryByText("pass")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Unread message")).toBeInTheDocument();
   });
 

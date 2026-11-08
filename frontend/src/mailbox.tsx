@@ -1,48 +1,51 @@
 /* eslint-disable complexity, max-lines-per-function, react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
-  Download,
+  ArrowLeft,
   Inbox,
   Paperclip,
   PenLine,
   RefreshCw,
-  Reply,
   Send,
   ShieldCheck,
-  UserRound,
 } from "lucide-react";
 import {
-  readOutboundAttachments,
   saveAttachmentDownload,
+  type AttachmentUploadApi,
 } from "./attachmentFiles";
+import { ComposeMessage } from "./composeMessage";
 import type {
   DetailState,
   InboxMailboxContentProps,
-  MailboxApi,
   MailboxListProps,
   MailboxMode,
   MailboxState,
   MailboxViewProps,
-  MessageDetailProps,
   OutboundDetailState,
   SentMailboxContentProps,
   SentMailboxState,
   SentMessageListProps,
   ThreadDetailProps,
 } from "./mailboxTypes";
-import { formatBytes, sanitizeAttachmentName } from "./textRendering";
+import { ThreadDetail } from "./conversation";
+import {
+  conversationRows,
+  sentConversationRows,
+  standaloneOutboundThread,
+  mailDate,
+  updateThreadSummary,
+} from "./mailboxPresentation";
+import "./mailbox.css";
 import type {
   Contact,
-  MailboxAttachment,
   MailboxMessageDetail,
   MailboxMessageSummary,
-  OutboundMessageDetail,
   OutboundMessageSummary,
-  OutboundAttachmentInput,
   ReplyMessageRequest,
 } from "./types";
 
 export type { MailboxApi } from "./mailboxTypes";
+export { MessageDetail, ThreadDetail } from "./conversation";
 
 export function MailboxView({ apiClient }: MailboxViewProps) {
   const [mailboxMode, setMailboxMode] = useState<MailboxMode>("inbox");
@@ -61,19 +64,36 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
   const [selectedOutboundId, setSelectedOutboundId] = useState<string>();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [actionError, setActionError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
   const [searchQuery, setSearchQuery] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
   const showInbox = useCallback(() => setMailboxMode("inbox"), []);
   const showSent = useCallback(() => setMailboxMode("sent"), []);
   const toggleCompose = useCallback(() => setComposeOpen((open) => !open), []);
+  const closeReader = useCallback(() => {
+    setDetailState({ status: "empty" });
+    setOutboundDetailState({ status: "empty" });
+    setSelectedMessageId(undefined);
+    setSelectedOutboundId(undefined);
+  }, []);
   const refreshCurrentMailbox = useCallback(() => {
     if (mailboxMode === "sent") {
       void loadSentMessages();
+      if (
+        outboundDetailState.status === "ready" &&
+        outboundDetailState.message.thread_id
+      ) {
+        void refreshOpenThread(outboundDetailState.message.thread_id);
+      }
       return;
     }
     void loadMessages();
-  }, [apiClient, mailboxMode]);
+    if (detailState.status === "ready")
+      void refreshOpenThread(detailState.thread.thread_id);
+  }, [apiClient, mailboxMode, detailState, outboundDetailState]);
   const handleComposeQueued = useCallback(() => {
+    setComposeOpen(false);
+    setNotice("Message queued for delivery. Track its status in Sent.");
     void loadMessages();
     if (mailboxMode === "sent") {
       void loadSentMessages();
@@ -105,11 +125,13 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
   const handleToggleRead = useCallback(
     (message: MailboxMessageSummary | MailboxMessageDetail) =>
       void toggleRead(message),
-    [apiClient],
+    [apiClient, state],
   );
 
   async function loadMessages() {
-    setState({ status: "loading" });
+    setState((current) =>
+      current.status === "ready" ? current : { status: "loading" },
+    );
     try {
       setState({
         status: "ready",
@@ -129,9 +151,9 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
       setSentState({ status: "error", message: "Sent mail is unavailable" });
       return;
     }
-    setSentState({ status: "loading" });
-    setSelectedOutboundId(undefined);
-    setOutboundDetailState({ status: "empty" });
+    setSentState((current) =>
+      current.status === "ready" ? current : { status: "loading" },
+    );
     try {
       setSentState({
         status: "ready",
@@ -227,18 +249,36 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
         </button>
       </header>
 
-      {composeOpen ? (
-        <ComposeMessage apiClient={apiClient} onQueued={handleComposeQueued} />
+      {notice ? (
+        <p className="mailbox-notice" role="status">
+          {notice}
+        </p>
       ) : null}
+
+      <ComposeMessage
+        apiClient={apiClient}
+        open={composeOpen}
+        onClose={() => setComposeOpen(false)}
+        onQueued={handleComposeQueued}
+      />
       {mailboxMode === "sent" ? (
         <SentMailboxContent
+          uploadApi={apiClient}
+          onBack={closeReader}
           onSelectOutbound={handleSelectOutbound}
           outboundDetailState={outboundDetailState}
           selectedOutboundId={selectedOutboundId}
           sentState={sentState}
+          contacts={contacts}
+          onReply={handleReply}
+          onToggleRead={handleToggleRead}
+          onContactChange={handleChangeMessageContact}
+          onDownloadAttachment={handleDownloadAttachment}
         />
       ) : (
         <InboxMailboxContent
+          uploadApi={apiClient}
+          onBack={closeReader}
           contacts={contacts}
           detailState={detailState}
           onChangeMessageContact={handleChangeMessageContact}
@@ -343,10 +383,22 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
     setSelectedOutboundId(message.id);
     setOutboundDetailState({ status: "loading" });
     try {
+      const detail = await apiClient.fetchOutboundMessage(message.id);
       setOutboundDetailState({
         status: "ready",
-        message: await apiClient.fetchOutboundMessage(message.id),
+        message: detail,
+        thread: null,
       });
+      if (detail.thread_id && apiClient.fetchThreadDetail) {
+        try {
+          const thread = await apiClient.fetchThreadDetail(detail.thread_id);
+          setOutboundDetailState({ status: "ready", message: detail, thread });
+        } catch {
+          setActionError(
+            "Sent message loaded. The rest of the conversation could not be loaded.",
+          );
+        }
+      }
     } catch (error) {
       setOutboundDetailState({
         status: "error",
@@ -367,11 +419,21 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
     }
     setActionError(undefined);
     try {
-      const updated = await apiClient.updateMessageState(
-        message.id,
-        !message.is_read,
+      const targets =
+        "body_text" in message || !message.thread_id || state.status !== "ready"
+          ? [message]
+          : state.messages.filter(
+              (item) => item.thread_id === message.thread_id,
+            );
+      await Promise.all(
+        targets.map(async (item) => {
+          const updated = await apiClient.updateMessageState!(
+            item.id,
+            !message.is_read,
+          );
+          applySummaryUpdate(updated);
+        }),
       );
-      applySummaryUpdate(updated);
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : "Unable to update message",
@@ -406,20 +468,76 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
       throw new Error("Reply is unavailable");
     }
     await apiClient.replyToMessage(message.id, request);
+    if (message.thread_id && apiClient.fetchThreadDetail) {
+      try {
+        const thread = await apiClient.fetchThreadDetail(message.thread_id);
+        setDetailState((current) =>
+          current.status === "ready" &&
+          current.thread.thread_id === message.thread_id
+            ? { ...current, thread }
+            : current,
+        );
+        setOutboundDetailState((current) =>
+          current.status === "ready" &&
+          current.message.thread_id === message.thread_id
+            ? { ...current, thread }
+            : current,
+        );
+      } catch {
+        setActionError(
+          "Your reply was queued. Refresh to load the updated conversation.",
+        );
+      }
+    }
+    void loadSentMessages();
+  }
+
+  async function refreshOpenThread(threadId: string) {
+    if (!apiClient.fetchThreadDetail) return;
+    try {
+      const thread = await apiClient.fetchThreadDetail(threadId);
+      setDetailState((current) =>
+        current.status === "ready" && current.thread.thread_id === threadId
+          ? { ...current, thread }
+          : current,
+      );
+      setOutboundDetailState((current) =>
+        current.status === "ready" && current.message.thread_id === threadId
+          ? { ...current, thread }
+          : current,
+      );
+    } catch {
+      setActionError("Unable to refresh the conversation. Try again.");
+    }
   }
 
   async function downloadAttachment(
     message: MailboxMessageDetail,
     attachmentId: string,
   ) {
-    if (!apiClient.downloadAttachment) {
+    if (message.direction !== "outbound" && !apiClient.downloadAttachment) {
       setActionError("Attachment download is unavailable");
       return;
     }
     setActionError(undefined);
     try {
+      if (message.direction === "outbound") {
+        if (!apiClient.downloadOutboundAttachment)
+          throw new Error("Attachment download is unavailable");
+        const attachment = message.attachments.find(
+          (item) => item.id === attachmentId,
+        );
+        if (!attachment) throw new Error("Attachment was not found");
+        saveAttachmentDownload(
+          await apiClient.downloadOutboundAttachment(
+            message.id,
+            attachment.position,
+          ),
+        );
+        return;
+      }
       saveAttachmentDownload(
-        await apiClient.downloadAttachment(message.id, attachmentId),
+        await apiClient.downloadAttachment!(message.id, attachmentId),
       );
     } catch (error) {
       setActionError(
@@ -445,25 +563,21 @@ export function MailboxView({ apiClient }: MailboxViewProps) {
       current.status === "ready"
         ? {
             ...current,
-            thread: {
-              ...current.thread,
-              messages: current.thread.messages.map((message) =>
-                message.id === updated.id
-                  ? {
-                      ...message,
-                      is_read: updated.is_read,
-                      contact_id: updated.contact_id,
-                    }
-                  : message,
-              ),
-            },
+            thread: updateThreadSummary(current.thread, updated),
           }
+        : current,
+    );
+    setOutboundDetailState((current) =>
+      current.status === "ready" && current.thread
+        ? { ...current, thread: updateThreadSummary(current.thread, updated) }
         : current,
     );
   }
 }
 
 function InboxMailboxContent({
+  uploadApi,
+  onBack,
   contacts,
   detailState,
   onChangeMessageContact,
@@ -490,30 +604,46 @@ function InboxMailboxContent({
   }
 
   return (
-    <div className="mailbox-content">
+    <div
+      className="mailbox-content"
+      data-reading={detailState.status !== "empty"}
+    >
       <MailboxList
         messages={state.messages}
         selectedMessageId={selectedMessageId}
         onSelectMessage={onSelectMessage}
         onToggleRead={onToggleRead}
       />
-      <DetailPane
-        state={detailState}
-        contacts={contacts}
-        onToggleRead={onToggleRead}
-        onContactChange={onChangeMessageContact}
-        onDownloadAttachment={onDownloadAttachment}
-        onReply={onReply}
-      />
+      <div className="mailbox-reader">
+        <button
+          type="button"
+          className="reader-back text-button"
+          onClick={onBack}
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+          Back to inbox
+        </button>
+        <DetailPane
+          uploadApi={uploadApi}
+          state={detailState}
+          contacts={contacts}
+          onToggleRead={onToggleRead}
+          onContactChange={onChangeMessageContact}
+          onDownloadAttachment={onDownloadAttachment}
+          onReply={onReply}
+        />
+      </div>
     </div>
   );
 }
 
 function SentMailboxContent({
+  onBack,
   onSelectOutbound,
   outboundDetailState,
   selectedOutboundId,
   sentState,
+  ...threadActions
 }: SentMailboxContentProps) {
   if (sentState.status === "idle" || sentState.status === "loading") {
     return (
@@ -531,13 +661,26 @@ function SentMailboxContent({
   }
 
   return (
-    <div className="mailbox-content">
+    <div
+      className="mailbox-content"
+      data-reading={outboundDetailState.status !== "empty"}
+    >
       <SentMessageList
         messages={sentState.messages}
         selectedMessageId={selectedOutboundId}
         onSelectMessage={onSelectOutbound}
       />
-      <OutboundDetailPane state={outboundDetailState} />
+      <div className="mailbox-reader">
+        <button
+          type="button"
+          className="reader-back text-button"
+          onClick={onBack}
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+          Back to sent mail
+        </button>
+        <OutboundDetailPane state={outboundDetailState} {...threadActions} />
+      </div>
     </div>
   );
 }
@@ -551,13 +694,20 @@ export function MailboxList({
   if (messages.length === 0) {
     return <div className="empty-state">No accepted messages</div>;
   }
+  const selectedThreadId = messages.find(
+    (message) => message.id === selectedMessageId,
+  )?.thread_id;
 
   return (
     <ol className="mailbox-list" aria-label="Mailbox messages">
-      {messages.map((message) => (
+      {conversationRows(messages).map(({ message, count }) => (
         <li
           className="mailbox-row"
-          data-selected={selectedMessageId === message.id}
+          data-unread={!message.is_read}
+          data-selected={
+            selectedMessageId === message.id ||
+            Boolean(selectedThreadId && selectedThreadId === message.thread_id)
+          }
           key={message.id}
         >
           <button
@@ -572,13 +722,24 @@ export function MailboxList({
             </span>
             <span className="sender-cell">
               <span className="sender-address">{message.from_address}</span>
-              {message.from_display_name ? (
-                <span className="sender-display">
-                  <UserRound aria-hidden="true" size={13} />
-                  {message.from_display_name}
-                </span>
-              ) : null}
+              <span className="sender-display">
+                {message.from_display_name || message.from_address}
+                {count > 1 ? (
+                  <span
+                    className="conversation-count"
+                    aria-label={`${count} received messages`}
+                  >
+                    {count}
+                  </span>
+                ) : null}
+              </span>
             </span>
+            <time
+              className="list-timestamp"
+              dateTime={message.received_at ?? undefined}
+            >
+              {mailDate(message.received_at, true)}
+            </time>
             <span className="message-cell">
               <span className="message-subject">
                 {message.subject || "(no subject)"}
@@ -586,10 +747,15 @@ export function MailboxList({
               <span className="message-snippet">{message.snippet}</span>
             </span>
             <span className="meta-cell">
-              <span className="verdict-pill">
-                <ShieldCheck aria-hidden="true" size={13} />
-                {message.auth_verdict ?? "unknown"}
-              </span>
+              {message.auth_verdict && message.auth_verdict !== "pass" ? (
+                <span
+                  className="auth-warning"
+                  title="Authentication needs review"
+                >
+                  <ShieldCheck aria-hidden="true" size={13} />
+                  Review
+                </span>
+              ) : null}
               {message.attachment_count > 0 ? (
                 <span
                   className="attachment-count"
@@ -629,7 +795,7 @@ function SentMessageList({
 
   return (
     <ol className="mailbox-list sent-message-list" aria-label="Sent messages">
-      {messages.map((message) => (
+      {sentConversationRows(messages).map(({ message, count }) => (
         <li
           className="mailbox-row sent-row"
           data-selected={selectedMessageId === message.id}
@@ -654,6 +820,14 @@ function SentMessageList({
             <span className="message-cell">
               <span className="message-subject">
                 {message.subject || "(no subject)"}
+                {count > 1 ? (
+                  <span
+                    className="thread-count"
+                    aria-label={`${count} sent messages`}
+                  >
+                    {count}
+                  </span>
+                ) : null}
               </span>
               <span
                 className="message-snippet"
@@ -676,6 +850,7 @@ function SentMessageList({
 }
 
 function DetailPane({
+  uploadApi,
   state,
   contacts,
   onToggleRead,
@@ -683,6 +858,7 @@ function DetailPane({
   onDownloadAttachment,
   onReply,
 }: {
+  uploadApi: AttachmentUploadApi;
   state: DetailState;
   contacts: Contact[];
   onToggleRead: (message: MailboxMessageDetail) => void;
@@ -718,6 +894,7 @@ function DetailPane({
   }
   return (
     <ThreadDetail
+      uploadApi={uploadApi}
       thread={state.thread}
       contacts={contacts}
       onToggleRead={onToggleRead}
@@ -728,7 +905,10 @@ function DetailPane({
   );
 }
 
-function OutboundDetailPane({ state }: { state: OutboundDetailState }) {
+function OutboundDetailPane({
+  state,
+  ...actions
+}: { state: OutboundDetailState } & Omit<ThreadDetailProps, "thread">) {
   if (state.status === "empty") {
     return <div className="detail-empty">Select a sent message</div>;
   }
@@ -746,398 +926,19 @@ function OutboundDetailPane({ state }: { state: OutboundDetailState }) {
       </div>
     );
   }
-  return <OutboundMessageDetailView message={state.message} />;
-}
-
-function OutboundMessageDetailView({
-  message,
-}: {
-  message: OutboundMessageDetail;
-}) {
   return (
-    <section className="thread-detail" aria-label="Sent message detail">
-      <article className="message-detail sent-detail">
-        <header className="message-detail-header">
-          <div className="message-from-block">
-            <span className="message-from-address">
-              {message.subject || "(no subject)"}
-            </span>
-            <span className="message-from-display">
-              {message.status} · {displayDateTime(message.sent_at)}
-            </span>
-          </div>
-          <div className="message-security-grid outbound-address-grid">
-            <SecurityLine label="Status" value={message.status} />
-            <SecurityLine label="From" value={message.from_address} />
-            <SecurityLine
-              label="To"
-              value={recipientAddresses(message, "to")}
-            />
-            <SecurityLine
-              label="Cc"
-              value={recipientAddresses(message, "cc")}
-            />
-            <SecurityLine
-              label="Bcc"
-              value={recipientAddresses(message, "bcc")}
-            />
-            <SecurityLine
-              label="Created"
-              value={displayDateTime(message.created_at)}
-            />
-          </div>
-          {message.last_error ? (
-            <div className="error-state compact-error" role="alert">
-              {message.last_error}
-            </div>
-          ) : null}
-        </header>
-        <h2 className="message-detail-subject">
-          {message.subject || "(no subject)"}
-        </h2>
-        <pre className="message-body-text">{message.body_text}</pre>
-      </article>
-    </section>
-  );
-}
-
-export function ThreadDetail({
-  thread,
-  contacts = [],
-  onToggleRead,
-  onContactChange,
-  onDownloadAttachment,
-  onReply,
-}: ThreadDetailProps) {
-  return (
-    <section className="thread-detail" aria-label="Thread detail">
-      {thread.messages.map((message) => (
-        <MessageDetail
-          contacts={contacts}
-          key={message.id}
-          message={message}
-          onContactChange={onContactChange}
-          onDownloadAttachment={onDownloadAttachment}
-          onReply={onReply}
-          onToggleRead={onToggleRead}
-        />
-      ))}
-    </section>
-  );
-}
-
-export function MessageDetail({
-  message,
-  contacts = [],
-  onToggleRead,
-  onContactChange,
-  onDownloadAttachment,
-  onReply,
-}: MessageDetailProps) {
-  const [replyOpen, setReplyOpen] = useState(false);
-  const closeReply = useCallback(() => setReplyOpen(false), []);
-  const downloadAttachment = useCallback(
-    (attachmentId: string) => {
-      const result = onDownloadAttachment?.(message, attachmentId);
-      result?.catch(() => undefined);
-    },
-    [message, onDownloadAttachment],
-  );
-  return (
-    <article className="message-detail" aria-label="Message detail">
-      <header className="message-detail-header">
-        <div className="message-from-block">
-          <span className="message-from-address">{message.from_address}</span>
-          {message.from_display_name ? (
-            <span className="message-from-display">
-              {message.from_display_name}
-            </span>
-          ) : null}
+    <>
+      {state.message.last_error ? (
+        <div className="error-state compact-error" role="alert">
+          {state.message.last_error}
         </div>
-        <div className="message-security-grid">
-          <SecurityLine label="Auth verdict" value={message.auth_verdict} />
-          <SecurityLine label="SPF" value={message.spf_result} />
-          <SecurityLine label="DKIM" value={message.dkim_result} />
-          <SecurityLine label="DMARC" value={message.dmarc_result} />
-          <SecurityLine label="Spam" value={message.spam_result} />
-          <SecurityLine label="Virus" value={message.virus_result} />
-          <SecurityLine label="Security" value={message.security_disposition} />
-        </div>
-        <div className="message-actions">
-          {onToggleRead ? (
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => onToggleRead(message)}
-            >
-              {message.is_read ? "Mark unread" : "Mark read"}
-            </button>
-          ) : null}
-          {onContactChange ? (
-            <label className="contact-control">
-              <span>Contact association</span>
-              <select
-                aria-label="Contact association"
-                value={message.contact_id ?? ""}
-                onChange={(event) =>
-                  onContactChange(message, event.currentTarget.value || null)
-                }
-              >
-                <option value="">No contact</option>
-                {contacts.map((contact) => (
-                  <option key={contact.id} value={contact.id}>
-                    {contact.display_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {onReply ? (
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => setReplyOpen((open) => !open)}
-            >
-              <Reply aria-hidden="true" size={16} />
-              Reply
-            </button>
-          ) : null}
-        </div>
-      </header>
-      <h2 className="message-detail-subject">
-        {message.subject || "(no subject)"}
-      </h2>
-      <pre className="message-body-text">{message.body_text}</pre>
-      {replyOpen && onReply ? (
-        <ReplyMessageForm
-          message={message}
-          onReply={onReply}
-          onQueued={closeReply}
-        />
       ) : null}
-      {message.attachments.length > 0 ? (
-        <AttachmentList
-          attachments={message.attachments}
-          onDownload={downloadAttachment}
-        />
-      ) : null}
-    </article>
+      <ThreadDetail
+        thread={state.thread ?? standaloneOutboundThread(state.message)}
+        {...actions}
+      />
+    </>
   );
-}
-
-function ComposeMessage({
-  apiClient,
-  onQueued,
-}: {
-  apiClient: MailboxApi;
-  onQueued: () => void;
-}) {
-  const [fromAddress, setFromAddress] = useState("contact@ahara.io");
-  const [to, setTo] = useState("");
-  const [subject, setSubject] = useState("");
-  const [bodyText, setBodyText] = useState("");
-  const [attachments, setAttachments] = useState<OutboundAttachmentInput[]>([]);
-  const [status, setStatus] = useState<string>();
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatus(undefined);
-    if (!apiClient.composeMessage) {
-      setStatus("Compose is unavailable");
-      return;
-    }
-    try {
-      await apiClient.composeMessage({
-        from_address: fromAddress,
-        to: splitAddresses(to),
-        cc: [],
-        bcc: [],
-        subject,
-        body_text: bodyText,
-        attachments,
-      });
-      setSubject("");
-      setBodyText("");
-      setTo("");
-      setAttachments([]);
-      setStatus("Queued");
-      onQueued();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to queue");
-    }
-  }
-
-  async function selectAttachments(files: FileList | null) {
-    await selectOutboundAttachments(files, setAttachments, setStatus);
-  }
-
-  return (
-    <form className="compose-message" onSubmit={(event) => void submit(event)}>
-      <label>
-        <span>From</span>
-        <input
-          value={fromAddress}
-          onChange={(event) => setFromAddress(event.currentTarget.value)}
-        />
-      </label>
-      <label>
-        <span>To</span>
-        <input
-          value={to}
-          onChange={(event) => setTo(event.currentTarget.value)}
-        />
-      </label>
-      <label>
-        <span>Subject</span>
-        <input
-          value={subject}
-          onChange={(event) => setSubject(event.currentTarget.value)}
-        />
-      </label>
-      <label className="compose-body">
-        <span>Body</span>
-        <textarea
-          value={bodyText}
-          onChange={(event) => setBodyText(event.currentTarget.value)}
-        />
-      </label>
-      <label>
-        <span>Attachments</span>
-        <input
-          multiple
-          type="file"
-          onChange={(event) =>
-            void selectAttachments(event.currentTarget.files)
-          }
-        />
-      </label>
-      <AttachmentChips attachments={attachments} />
-      <button className="primary-button" type="submit">
-        <Send aria-hidden="true" size={16} />
-        Send
-      </button>
-      {status ? <span className="compose-status">{status}</span> : null}
-    </form>
-  );
-}
-
-function ReplyMessageForm({
-  message,
-  onReply,
-  onQueued,
-}: {
-  message: MailboxMessageDetail;
-  onReply: (
-    message: MailboxMessageDetail,
-    request: ReplyMessageRequest,
-  ) => Promise<void>;
-  onQueued: () => void;
-}) {
-  const [fromAddress, setFromAddress] = useState("contact@ahara.io");
-  const [bodyText, setBodyText] = useState("");
-  const [attachments, setAttachments] = useState<OutboundAttachmentInput[]>([]);
-  const [status, setStatus] = useState<string>();
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatus(undefined);
-    try {
-      await onReply(message, {
-        from_address: fromAddress,
-        body_text: bodyText,
-        attachments,
-      });
-      setBodyText("");
-      setAttachments([]);
-      setStatus("Queued");
-      onQueued();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to queue");
-    }
-  }
-
-  async function selectAttachments(files: FileList | null) {
-    await selectOutboundAttachments(files, setAttachments, setStatus);
-  }
-
-  return (
-    <form className="reply-message" onSubmit={(event) => void submit(event)}>
-      <label>
-        <span>From</span>
-        <input
-          value={fromAddress}
-          onChange={(event) => setFromAddress(event.currentTarget.value)}
-        />
-      </label>
-      <label className="compose-body">
-        <span>Reply</span>
-        <textarea
-          value={bodyText}
-          onChange={(event) => setBodyText(event.currentTarget.value)}
-        />
-      </label>
-      <label>
-        <span>Attachments</span>
-        <input
-          aria-label="Reply attachments"
-          multiple
-          type="file"
-          onChange={(event) =>
-            void selectAttachments(event.currentTarget.files)
-          }
-        />
-      </label>
-      <AttachmentChips attachments={attachments} />
-      <button className="primary-button" type="submit">
-        <Send aria-hidden="true" size={16} />
-        Send reply
-      </button>
-      {status ? <span className="compose-status">{status}</span> : null}
-    </form>
-  );
-}
-
-function AttachmentChips({
-  attachments,
-}: {
-  attachments: OutboundAttachmentInput[];
-}) {
-  if (attachments.length === 0) {
-    return null;
-  }
-
-  return (
-    <ul className="compose-attachment-list">
-      {attachments.map((attachment) => (
-        <li key={`${attachment.filename}:${attachment.content_base64.length}`}>
-          <Paperclip aria-hidden="true" size={14} />
-          {attachment.filename}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-async function selectOutboundAttachments(
-  files: FileList | null,
-  setAttachments: (attachments: OutboundAttachmentInput[]) => void,
-  setStatus: (status: string | undefined) => void,
-) {
-  setStatus(undefined);
-  try {
-    setAttachments(await readOutboundAttachments(files));
-  } catch (error) {
-    setStatus(
-      error instanceof Error ? error.message : "Unable to read attachments",
-    );
-  }
-}
-
-function splitAddresses(value: string) {
-  return value
-    .split(",")
-    .map((address) => address.trim())
-    .filter(Boolean);
 }
 
 function recipientSummary(message: OutboundMessageSummary) {
@@ -1148,69 +949,9 @@ function recipientSummary(message: OutboundMessageSummary) {
   return `${primary} +${message.recipient_count - 1}`;
 }
 
-function recipientAddresses(
-  message: OutboundMessageDetail,
-  kind: "to" | "cc" | "bcc",
-) {
-  const addresses = message.recipients
-    .filter((recipient) => recipient.kind === kind)
-    .map((recipient) => recipient.address);
-  return addresses.length > 0 ? addresses.join(", ") : "none";
-}
-
 function displayDateTime(value: string | null) {
   if (!value) {
     return "pending";
   }
   return value.replace("T", " ").split(".")[0];
-}
-
-function SecurityLine({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | null;
-}) {
-  return (
-    <div className="security-line">
-      <span>{label}</span>
-      <strong>{value ?? "unknown"}</strong>
-    </div>
-  );
-}
-
-function AttachmentList({
-  attachments,
-  onDownload,
-}: {
-  attachments: MailboxAttachment[];
-  onDownload: (attachmentId: string) => void;
-}) {
-  return (
-    <section className="attachment-list" aria-label="Attachments">
-      {attachments.map((attachment) => (
-        <div className="attachment-item" key={attachment.id}>
-          <Paperclip aria-hidden="true" size={15} />
-          <span>
-            {sanitizeAttachmentName(
-              attachment.display_filename || attachment.filename,
-            )}
-          </span>
-          <small>
-            {attachment.content_type} · {formatBytes(attachment.size_bytes)}
-          </small>
-          <button
-            className="icon-button"
-            type="button"
-            title={`Download ${attachment.display_filename}`}
-            aria-label={`Download ${attachment.display_filename}`}
-            onClick={() => onDownload(attachment.id)}
-          >
-            <Download aria-hidden="true" size={15} />
-          </button>
-        </div>
-      ))}
-    </section>
-  );
 }

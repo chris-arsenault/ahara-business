@@ -37,6 +37,17 @@ data "aws_iam_policy_document" "lambda_mail" {
   }
 
   statement {
+    sid    = "PrivateAttachmentObjects"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+      "s3:PutObject",
+    ]
+    resources = ["${aws_s3_bucket.raw_mail.arn}/attachments/*"]
+  }
+
+  statement {
     sid    = "ManageAppAuthorizationRecords"
     effect = "Allow"
 

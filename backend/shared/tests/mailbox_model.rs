@@ -232,3 +232,52 @@ SELECT 'MUTATION=' || count(*) FROM attempted;
     assert!(output.lines().any(|line| line == "MUTATION=0"), "{output}");
     println!("mailbox PostgreSQL shape returns and mutates accepted inbound mail only");
 }
+
+#[test]
+fn conversation_query_orders_received_and_outbound_messages_without_exposing_rejected_mail() {
+    let query = include_str!("../src/mailbox/thread.sql");
+    let sql = format!(
+        r#"
+{MAIL_MODEL_MIGRATION}
+INSERT INTO threads (id, normalized_subject)
+VALUES ('00000000-0000-0000-0000-000000000101', 'conversation'),
+       ('00000000-0000-0000-0000-000000000102', 'other');
+INSERT INTO messages (direction, thread_id, from_address, from_address_normalized,
+                      subject, body_text, status, security_disposition,
+                      received_at, sent_at, created_at)
+VALUES
+('inbound', '00000000-0000-0000-0000-000000000101', 'sender@example.test', 'sender@example.test',
+ 'conversation', 'INBOUND_FIRST', 'received', 'accepted', '2026-01-01 10:00Z', NULL, '2026-01-01 10:00Z'),
+('outbound', '00000000-0000-0000-0000-000000000101', 'contact@ahara.io', 'contact@ahara.io',
+ 'Re: conversation', 'SENT_SECOND', 'sent', 'accepted', NULL, '2026-01-01 11:00Z', '2026-01-01 10:59Z'),
+('outbound', '00000000-0000-0000-0000-000000000101', 'contact@ahara.io', 'contact@ahara.io',
+ 'Re: conversation', 'QUEUED_THIRD', 'queued', 'accepted', NULL, NULL, '2026-01-01 12:00Z'),
+('outbound', '00000000-0000-0000-0000-000000000101', 'contact@ahara.io', 'contact@ahara.io',
+ 'Re: conversation', 'FAILED_FOURTH', 'failed', 'accepted', NULL, NULL, '2026-01-01 13:00Z'),
+('inbound', '00000000-0000-0000-0000-000000000101', 'sender@example.test', 'sender@example.test',
+ 'conversation', 'HIDDEN_QUARANTINE', 'quarantined', 'quarantined', '2026-01-01 14:00Z', NULL, now()),
+('inbound', '00000000-0000-0000-0000-000000000101', 'sender@example.test', 'sender@example.test',
+ 'conversation', 'HIDDEN_REJECTION', 'rejected', 'rejected', '2026-01-01 15:00Z', NULL, now()),
+('outbound', '00000000-0000-0000-0000-000000000102', 'contact@ahara.io', 'contact@ahara.io',
+ 'other', 'OTHER_THREAD', 'sent', 'accepted', NULL, now(), now());
+PREPARE conversation(uuid) AS {query};
+EXECUTE conversation('00000000-0000-0000-0000-000000000101');
+"#
+    );
+    let output = run_ephemeral_postgres_sql(&sql);
+    let markers = [
+        "INBOUND_FIRST",
+        "SENT_SECOND",
+        "QUEUED_THIRD",
+        "FAILED_FOURTH",
+    ];
+    let positions =
+        markers.map(|marker| output.find(marker).expect("conversation message present"));
+    assert!(
+        positions.windows(2).all(|pair| pair[0] < pair[1]),
+        "{output}"
+    );
+    for hidden in ["HIDDEN_QUARANTINE", "HIDDEN_REJECTION", "OTHER_THREAD"] {
+        assert!(!output.contains(hidden), "{output}");
+    }
+}

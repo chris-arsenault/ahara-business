@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 mod app_authorization_routes;
+mod attachment_routes;
 mod calendar_routes;
 mod cors;
 mod finance_routes;
@@ -16,7 +17,9 @@ use axum::{Json, Router};
 use cors::cors_layer;
 use serde_json::{Value, json};
 use shared::app_authorizations::{AppAuthorizationService, AwsAppAuthorizationService};
-use shared::attachments::{AttachmentService, MailboxAttachmentDownload, PgAttachmentService};
+use shared::attachment_storage::{AttachmentStorage, S3AttachmentStorage};
+use shared::attachment_uploads::{AttachmentUploadService, PgAttachmentUploadService};
+use shared::attachments::{AttachmentService, PgAttachmentService};
 use shared::auth::{AuthVerifier, CognitoJwtVerifier, UserContext};
 use shared::config::AppConfig;
 use shared::contacts::{
@@ -39,8 +42,7 @@ use shared::mailbox::{
     UpdateMessageStateRequest,
 };
 use shared::outbound::{
-    ComposeMessageRequest, OutboundMessageDetail, OutboundMessageQueued, OutboundMessageSummary,
-    OutboundService, PgOutboundService, ReplyMessageRequest,
+    OutboundMessageDetail, OutboundMessageSummary, OutboundService, PgOutboundService,
 };
 use shared::ports::RawMailStore;
 use shared::raw_mail_store::S3RawMailStore;
@@ -54,6 +56,8 @@ pub struct ApiState {
     pub contacts: Arc<dyn ContactsService>,
     pub mailbox: Arc<dyn MailboxService>,
     pub attachments: Arc<dyn AttachmentService>,
+    pub attachment_storage: Arc<dyn AttachmentStorage>,
+    pub attachment_uploads: Arc<dyn AttachmentUploadService>,
     pub raw_mail_store: Arc<dyn RawMailStore>,
     pub outbound: Arc<dyn OutboundService>,
     pub forwarding: Arc<dyn ForwardingRuleService>,
@@ -75,10 +79,15 @@ impl ApiState {
             raw_mail_store.clone(),
             shared::inbound::limits::IngestLimits::default(),
         ));
-        let outbound = Arc::new(PgOutboundService::new(
+        let attachment_storage = Arc::new(S3AttachmentStorage::from_env(&config.mail).await);
+        let attachment_uploads = Arc::new(PgAttachmentUploadService::new(
             db.clone(),
-            config.mail.domain.clone(),
+            attachment_storage.clone(),
         ));
+        let outbound = Arc::new(
+            PgOutboundService::new(db.clone(), config.mail.domain.clone())
+                .with_attachment_storage(attachment_storage.clone()),
+        );
         let forwarding = Arc::new(PgForwardingRuleService::new(db.clone()));
         let finance = Arc::new(PgFinanceService::new(db.clone()));
         let app_authorizations = Arc::new(
@@ -93,6 +102,8 @@ impl ApiState {
             contacts,
             mailbox,
             attachments,
+            attachment_storage,
+            attachment_uploads,
             raw_mail_store,
             outbound,
             forwarding,
@@ -119,10 +130,6 @@ pub fn router(state: ApiState) -> Router {
         .route("/mailbox/messages", get(list_mailbox_messages))
         .route("/mailbox/messages/{message_id}", get(get_mailbox_message))
         .route(
-            "/mailbox/messages/{message_id}/attachments/{attachment_id}",
-            get(download_mailbox_attachment),
-        )
-        .route(
             "/mailbox/messages/{message_id}/state",
             axum::routing::patch(update_mailbox_message_state),
         )
@@ -132,14 +139,6 @@ pub fn router(state: ApiState) -> Router {
         )
         .route("/mailbox/threads/{thread_id}", get(get_mailbox_thread))
         .route("/mailbox/search", get(search_mailbox_messages))
-        .route(
-            "/outbound/messages/compose",
-            axum::routing::post(compose_outbound_message),
-        )
-        .route(
-            "/mailbox/messages/{message_id}/reply",
-            axum::routing::post(reply_to_mailbox_message),
-        )
         .route("/outbound/messages", get(list_outbound_messages))
         .route("/outbound/messages/{message_id}", get(get_outbound_message))
         .route(
@@ -159,6 +158,7 @@ pub fn router(state: ApiState) -> Router {
             axum::routing::patch(update_address).delete(deactivate_address),
         )
         .merge(app_authorization_routes::router())
+        .merge(attachment_routes::router())
         .merge(calendar_routes::router())
         .merge(finance_routes::router())
         .merge(forwarding_audit_routes::router())
@@ -313,20 +313,6 @@ async fn get_mailbox_message(
     Ok(Json(state.mailbox.get_message(&message_id).await?))
 }
 
-async fn download_mailbox_attachment(
-    State(state): State<ApiState>,
-    headers: HeaderMap,
-    Path((message_id, attachment_id)): Path<(String, String)>,
-) -> Result<Json<MailboxAttachmentDownload>, ApiError> {
-    require_user(&state, &headers).await?;
-    Ok(Json(
-        state
-            .attachments
-            .download_attachment(&message_id, &attachment_id)
-            .await?,
-    ))
-}
-
 async fn get_mailbox_thread(
     State(state): State<ApiState>,
     headers: HeaderMap,
@@ -371,30 +357,6 @@ async fn link_mailbox_message_contact(
         state
             .mailbox
             .link_message_contact(&message_id, request)
-            .await?,
-    ))
-}
-
-async fn compose_outbound_message(
-    State(state): State<ApiState>,
-    headers: HeaderMap,
-    Json(request): Json<ComposeMessageRequest>,
-) -> Result<Json<OutboundMessageQueued>, ApiError> {
-    require_user(&state, &headers).await?;
-    Ok(Json(state.outbound.compose_message(request).await?))
-}
-
-async fn reply_to_mailbox_message(
-    State(state): State<ApiState>,
-    headers: HeaderMap,
-    Path(message_id): Path<String>,
-    Json(request): Json<ReplyMessageRequest>,
-) -> Result<Json<OutboundMessageQueued>, ApiError> {
-    require_user(&state, &headers).await?;
-    Ok(Json(
-        state
-            .outbound
-            .reply_to_message(&message_id, request)
             .await?,
     ))
 }
@@ -485,6 +447,8 @@ impl IntoResponse for ApiError {
 
 #[cfg(test)]
 mod tests {
+    mod attachment_tests;
+
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
     use base64::Engine;
@@ -881,7 +845,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mailbox_attachment_route_returns_private_download_payload() {
+    async fn mailbox_attachment_route_returns_private_download_url() {
         let response = authenticated_request(
             "GET",
             "/mailbox/messages/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000301",
@@ -891,10 +855,13 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let payload = response_json(response).await;
-        assert_eq!(payload["display_filename"], "invoice.pdf");
-        assert_eq!(payload["content_type"], "application/pdf");
-        assert_eq!(payload["content_base64"], "cGRmLWNvbnRlbnQ=");
-        assert!(payload.get("url").is_none());
+        assert!(
+            payload["url"]
+                .as_str()
+                .unwrap()
+                .starts_with("https://private-mail.s3.amazonaws.com/")
+        );
+        assert!(payload.get("content_base64").is_none());
     }
 
     #[tokio::test]
@@ -908,11 +875,10 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let payload = response_json(response).await;
-        assert_eq!(payload["message_count"], 1);
-        assert_eq!(
-            payload["messages"][0]["id"],
-            "00000000-0000-0000-0000-000000000001"
-        );
+        assert_eq!(payload["message_count"], 2);
+        assert_eq!(payload["messages"][0]["direction"], "inbound");
+        assert_eq!(payload["messages"][1]["direction"], "outbound");
+        assert_eq!(payload["messages"][1]["status"], "sent");
     }
 
     #[tokio::test]

@@ -9,5 +9,6 @@ cargo test --manifest-path backend/Cargo.toml -p shared --test mail_model -- --n
 cargo test --manifest-path backend/Cargo.toml -p shared --test inbound_ingest_model -- --nocapture
 cargo test --manifest-path backend/Cargo.toml -p shared --test mailbox_model -- --nocapture
 cargo test --manifest-path backend/Cargo.toml -p shared --test outbound_model -- --nocapture
+cargo test --manifest-path backend/Cargo.toml -p shared --test s3_attachments -- --nocapture
 cargo test --manifest-path backend/Cargo.toml -p shared --test forwarding_model -- --nocapture
 cargo test --manifest-path backend/Cargo.toml -p shared --test feedback_model -- --nocapture

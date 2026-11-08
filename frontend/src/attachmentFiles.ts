@@ -1,56 +1,63 @@
-import type {
-  MailboxAttachmentDownload,
-  OutboundAttachmentInput,
-} from "./types";
+import type { AttachmentUploadRequest, SignedAttachmentUrl } from "./types";
 import { sanitizeAttachmentName } from "./textRendering";
 
-export async function readOutboundAttachments(
-  files: FileList | null,
-): Promise<OutboundAttachmentInput[]> {
-  if (!files || files.length === 0) {
-    return [];
-  }
-  return Promise.all(Array.from(files).map(fileToAttachment));
+export const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+export const MAX_ATTACHMENT_COUNT = 10;
+export type AttachmentUploadApi = {
+  createAttachmentUpload?: (request: AttachmentUploadRequest) => Promise<{
+    upload_id: string;
+    upload: SignedAttachmentUrl;
+  }>;
+};
+
+export async function uploadAttachment(
+  api: AttachmentUploadApi,
+  file: File,
+  signal: AbortSignal,
+) {
+  if (!api.createAttachmentUpload)
+    throw new Error("Attachment uploads are unavailable");
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    await file.arrayBuffer(),
+  );
+  signal.throwIfAborted();
+  const grant = await api.createAttachmentUpload({
+    filename: sanitizeAttachmentName(file.name),
+    content_type: file.type || "application/octet-stream",
+    size_bytes: file.size,
+    checksum_sha256: btoa(String.fromCharCode(...new Uint8Array(digest))),
+  });
+  signal.throwIfAborted();
+  const response = await fetch(grant.upload.url, {
+    method: "PUT",
+    body: file,
+    headers: grant.upload.headers,
+    credentials: "omit",
+    redirect: "error",
+    signal,
+  });
+  if (!response.ok)
+    throw new Error(
+      `Upload failed (${response.status}). Attach the file again to retry.`,
+    );
+  return grant.upload_id;
 }
 
-export function saveAttachmentDownload(download: MailboxAttachmentDownload) {
-  const bytes = base64ToBytes(download.content_base64);
-  const blob = new Blob([bytes], {
-    type: download.content_type || "application/octet-stream",
-  });
-  const url = URL.createObjectURL(blob);
+export function saveAttachmentDownload(download: SignedAttachmentUrl) {
+  // S3 supplies attachment Content-Disposition. Navigating directly avoids both
+  // the WAF and copying the user's application token to another host.
   const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = sanitizeAttachmentName(
-    download.display_filename || download.filename,
-  );
+  anchor.href = download.url;
+  anchor.rel = "noreferrer";
+  anchor.referrerPolicy = "no-referrer";
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
 }
 
-async function fileToAttachment(file: File): Promise<OutboundAttachmentInput> {
-  return {
-    filename: sanitizeAttachmentName(file.name),
-    content_type: file.type || "application/octet-stream",
-    content_base64: arrayBufferToBase64(await file.arrayBuffer()),
-  };
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer) {
-  let binary = "";
-  for (const byte of new Uint8Array(buffer)) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-}
-
-function base64ToBytes(value: string) {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
+export function displayFileSize(bytes: number) {
+  return bytes >= 1024 * 1024
+    ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    : `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
 }

@@ -17,5 +17,9 @@ missing initial `ahara.io` domain and address records during normal deployment,
 without changing existing operator settings. Its rollback retains routing data
 to preserve delivery and references.
 
+`008_s3_attachments.sql` adds owner-bound upload records and version-pinned S3
+payload references while retaining existing base64 payloads. Its rollback refuses
+to remove S3 references while they own queued or sent mail.
+
 The `rollback/` directory contains the matching rollbacks. The legacy `seed/`
 fixture is optional; deployment does not need it to initialize mail routing.

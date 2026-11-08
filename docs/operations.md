@@ -26,6 +26,11 @@ Use the controlled [smoke check](smoke-check.md) after deployment.
 - `ListRawMailPrefix` allows Lambda list access only for the raw MIME prefix.
 - `ReadWriteRawMailObjects` allows Lambda raw object access only under the raw
   MIME prefix.
+- `PrivateAttachmentObjects` allows GET/versioned GET/PUT only under the private
+  `attachments/` prefix. Browser grants expire after 15 minutes; CORS permits the
+  mail frontend origin. Stage objects expire after two days and extracted
+  download objects after one day. Version-pinned `attachments/files/` objects
+  remain available to queued retries and sent-mail downloads.
 - `SendFromMailIdentity` allows outbound send only from the project SES domain
   identity.
 - `AllowSesFeedbackPublish` allows SES feedback publish only to the bounce and

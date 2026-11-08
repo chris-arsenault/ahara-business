@@ -4,6 +4,13 @@ All notable user-visible changes are recorded here.
 
 ## Unreleased
 
+- Overhaul mailbox navigation, conversation lists, the reading pane, compose and
+  inline replies; use space efficiently on desktop and phones, with expandable
+  security details.
+- Show outbound replies and their delivery status within conversations.
+- Upload and download private attachments directly through S3, bypassing the
+  application WAF. Allow 15 MiB combined, show upload/removal states, and send
+  through SES v2. Preserve existing attachments and failed-send drafts.
 - Initialize missing mail domain and address routing during normal migrations,
   preserving existing operator settings.
 - Update `async-trait` to fix generated-code Clippy errors blocking deployment.

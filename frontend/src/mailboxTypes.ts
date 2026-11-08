@@ -1,4 +1,5 @@
 import type { ApiClient } from "./api";
+import type { AttachmentUploadApi } from "./attachmentFiles";
 import type {
   Contact,
   MailboxMessageDetail,
@@ -16,6 +17,8 @@ export type MailboxApi = Pick<ApiClient, "fetchMailboxMessages"> &
       | "fetchMessageDetail"
       | "fetchThreadDetail"
       | "downloadAttachment"
+      | "downloadOutboundAttachment"
+      | "createAttachmentUpload"
       | "updateMessageState"
       | "linkMessageContact"
       | "listContacts"
@@ -51,12 +54,18 @@ export type SentMailboxState =
 export type OutboundDetailState =
   | { status: "empty" }
   | { status: "loading" }
-  | { status: "ready"; message: OutboundMessageDetail }
+  | {
+      status: "ready";
+      message: OutboundMessageDetail;
+      thread: MailboxThreadDetail | null;
+    }
   | { status: "error"; message: string };
 
 export type MailboxMode = "inbox" | "sent";
 
 export type InboxMailboxContentProps = {
+  uploadApi: AttachmentUploadApi;
+  onBack: () => void;
   contacts: Contact[];
   detailState: DetailState;
   onChangeMessageContact: (
@@ -79,12 +88,14 @@ export type InboxMailboxContentProps = {
 }>;
 
 export type SentMailboxContentProps = {
+  onBack: () => void;
   onSelectOutbound: (message: OutboundMessageSummary) => void;
   outboundDetailState: OutboundDetailState;
   sentState: SentMailboxState;
 } & Partial<{
   selectedOutboundId: string;
-}>;
+}> &
+  Omit<ThreadDetailProps, "thread">;
 
 export type MailboxListProps = {
   messages: MailboxMessageSummary[];
@@ -104,6 +115,7 @@ export type SentMessageListProps = {
 export type ThreadDetailProps = {
   thread: MailboxThreadDetail;
 } & Partial<{
+  uploadApi: AttachmentUploadApi;
   contacts: Contact[];
   onToggleRead: (message: MailboxMessageDetail) => void;
   onContactChange: (
@@ -123,6 +135,7 @@ export type ThreadDetailProps = {
 export type MessageDetailProps = {
   message: MailboxMessageDetail;
 } & Partial<{
+  uploadApi: AttachmentUploadApi;
   contacts: Contact[];
   onToggleRead: (message: MailboxMessageDetail) => void;
   onContactChange: (

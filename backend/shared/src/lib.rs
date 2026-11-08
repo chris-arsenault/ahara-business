@@ -1,4 +1,6 @@
 pub mod app_authorizations;
+pub mod attachment_storage;
+pub mod attachment_uploads;
 pub mod attachments;
 pub mod auth;
 pub mod calendar;

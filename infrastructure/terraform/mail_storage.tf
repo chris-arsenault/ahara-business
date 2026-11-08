@@ -34,6 +34,23 @@ resource "aws_s3_bucket_lifecycle_configuration" "raw_mail" {
   bucket = aws_s3_bucket.raw_mail.id
 
   rule {
+    id     = "attachment-staging"
+    status = "Enabled"
+    filter { prefix = "attachments/staging/" }
+    expiration { days = 2 }
+    noncurrent_version_expiration { noncurrent_days = 2 }
+    abort_incomplete_multipart_upload { days_after_initiation = 1 }
+  }
+
+  rule {
+    id     = "attachment-download-cache"
+    status = "Enabled"
+    filter { prefix = "attachments/downloads/" }
+    expiration { days = 1 }
+    noncurrent_version_expiration { noncurrent_days = 1 }
+  }
+
+  rule {
     id     = "raw-mail-retention"
     status = "Enabled"
 
@@ -79,4 +96,15 @@ data "aws_iam_policy_document" "raw_mail_ses_write" {
 resource "aws_s3_bucket_policy" "raw_mail_ses_write" {
   bucket = aws_s3_bucket.raw_mail.id
   policy = data.aws_iam_policy_document.raw_mail_ses_write.json
+}
+
+resource "aws_s3_bucket_cors_configuration" "mail_attachments" {
+  bucket = aws_s3_bucket.raw_mail.id
+  cors_rule {
+    allowed_origins = ["https://${local.frontend_hostname}"]
+    allowed_methods = ["PUT", "GET", "HEAD"]
+    allowed_headers = ["content-type", "x-amz-checksum-sha256", "x-amz-sdk-checksum-algorithm", "x-amz-content-sha256"]
+    expose_headers  = ["ETag"]
+    max_age_seconds = 300
+  }
 }

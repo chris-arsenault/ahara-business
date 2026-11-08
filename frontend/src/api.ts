@@ -25,7 +25,8 @@ import type {
   ForwardingRule,
   ForwardingRuleStatus,
   IcsCandidate,
-  MailboxAttachmentDownload,
+  SignedAttachmentUrl,
+  AttachmentUploadRequest,
   MailboxMessageDetail,
   MailboxMessageSummary,
   MailboxThreadDetail,
@@ -87,8 +88,21 @@ export class ApiClient {
   }
 
   downloadAttachment(messageId: string, attachmentId: string) {
-    return this.request<MailboxAttachmentDownload>(
+    return this.request<SignedAttachmentUrl>(
       `/mailbox/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    );
+  }
+
+  createAttachmentUpload(request: AttachmentUploadRequest) {
+    return this.request<{ upload_id: string; upload: SignedAttachmentUrl }>(
+      "/attachments/uploads",
+      { method: "POST", body: request },
+    );
+  }
+
+  downloadOutboundAttachment(messageId: string, position: number) {
+    return this.request<SignedAttachmentUrl>(
+      `/outbound/messages/${encodeURIComponent(messageId)}/attachments/${position}/download`,
     );
   }
 

@@ -10,19 +10,24 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc2822;
 use uuid::Uuid;
 
+use crate::attachment_storage::{AttachmentStorage, StoredAttachment};
 use crate::db::DbPool;
 use crate::error::{AppError, AppResult};
 use crate::inbound::threading::{normalize_subject, participants_json};
 use crate::mailbox::{DEFAULT_SNIPPET_CHARS, body_snippet};
 use crate::ports::{MailSender, OutboundMailRequest};
 use crate::routing::parse_route;
+mod attachment_payloads;
+use attachment_payloads::{
+    fetch_outbound_attachments, fetch_outbound_mime_attachments_tx, insert_outbound_attachments,
+};
 
 pub const ENQUEUE_LIMIT_PER_FROM_PER_HOUR: i64 = 60;
 pub const WORKER_BATCH_LIMIT: i64 = 25;
 pub const MAX_SEND_ATTEMPTS: i32 = 5;
 pub const RETRY_BACKOFF_MINUTES: [i64; 4] = [5, 30, 120, 480];
 pub const MAX_OUTBOUND_ATTACHMENT_COUNT: usize = 10;
-pub const MAX_OUTBOUND_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
+pub const MAX_OUTBOUND_ATTACHMENT_BYTES: usize = 15 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ComposeMessageRequest {
@@ -119,6 +124,8 @@ pub struct OutboundAttachmentInput {
     pub filename: String,
     pub content_type: String,
     pub content_base64: String,
+    #[serde(skip)]
+    pub storage: Option<StoredAttachment>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,7 +168,10 @@ pub struct OutboundAttachment {
     pub display_filename: String,
     pub content_type: String,
     pub size_bytes: i64,
+    #[serde(skip_serializing)]
     pub content_base64: String,
+    #[serde(skip)]
+    pub storage: Option<StoredAttachment>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -466,10 +476,11 @@ impl OutboundSendWorker {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PgOutboundService {
     pool: DbPool,
     configured_domain: String,
+    attachment_storage: Option<Arc<dyn AttachmentStorage>>,
 }
 
 impl PgOutboundService {
@@ -477,7 +488,13 @@ impl PgOutboundService {
         Self {
             pool,
             configured_domain: configured_domain.into(),
+            attachment_storage: None,
         }
+    }
+
+    pub fn with_attachment_storage(mut self, storage: Arc<dyn AttachmentStorage>) -> Self {
+        self.attachment_storage = Some(storage);
+        self
     }
 }
 
@@ -653,7 +670,9 @@ impl OutboundService for PgOutboundService {
             .await
             .map_err(|err| AppError::Database(err.to_string()))?;
 
-            work.push(fetch_claimed_work_item(&mut tx, row).await?);
+            work.push(
+                fetch_claimed_work_item(&mut tx, row, self.attachment_storage.as_deref()).await?,
+            );
         }
 
         tx.commit()
@@ -1765,41 +1784,6 @@ async fn insert_outbound_recipients(
     Ok(())
 }
 
-async fn insert_outbound_attachments(
-    tx: &mut Transaction<'_, Postgres>,
-    message_id: Uuid,
-    attachments: &[OutboundAttachment],
-) -> AppResult<()> {
-    for attachment in attachments {
-        let row: MessageIdRow = sqlx::query_as(
-            "INSERT INTO attachment_refs (
-                 message_id, position, filename, content_type, size_bytes
-             )
-             VALUES ($1, $2, $3, $4, $5)
-             RETURNING id",
-        )
-        .bind(message_id)
-        .bind(attachment.position)
-        .bind(&attachment.filename)
-        .bind(&attachment.content_type)
-        .bind(attachment.size_bytes)
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|err| AppError::Database(err.to_string()))?;
-
-        sqlx::query(
-            "INSERT INTO outbound_attachment_payloads (attachment_id, content_base64)
-             VALUES ($1, $2)",
-        )
-        .bind(row.id)
-        .bind(&attachment.content_base64)
-        .execute(&mut **tx)
-        .await
-        .map_err(|err| AppError::Database(err.to_string()))?;
-    }
-    Ok(())
-}
-
 async fn insert_outbound_work(
     tx: &mut Transaction<'_, Postgres>,
     message_id: Uuid,
@@ -1822,6 +1806,7 @@ async fn insert_outbound_work(
 async fn fetch_claimed_work_item(
     tx: &mut Transaction<'_, Postgres>,
     row: ClaimedWorkRow,
+    storage: Option<&dyn AttachmentStorage>,
 ) -> AppResult<ClaimedOutboundWork> {
     let message: ClaimMessageRow = sqlx::query_as(
         "SELECT from_address,
@@ -1839,7 +1824,7 @@ async fn fetch_claimed_work_item(
     .await
     .map_err(|err| AppError::Database(err.to_string()))?;
     let recipients = fetch_outbound_recipients_tx(tx, row.message_id).await?;
-    let attachments = fetch_outbound_mime_attachments_tx(tx, row.message_id).await?;
+    let attachments = fetch_outbound_mime_attachments_tx(tx, row.message_id, storage).await?;
     let reply_to = match row.source_message_id {
         Some(source_message_id) => fetch_source_reply_to(tx, source_message_id).await?,
         None => None,
@@ -1930,63 +1915,6 @@ async fn fetch_outbound_recipients_tx(
          FROM recipients
          WHERE message_id = $1
          ORDER BY position ASC, id ASC",
-    )
-    .bind(message_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(|err| AppError::Database(err.to_string()))?;
-    rows.into_iter().map(TryInto::try_into).collect()
-}
-
-async fn fetch_outbound_attachments(
-    pool: &DbPool,
-    message_id: Uuid,
-) -> AppResult<Vec<OutboundAttachment>> {
-    let rows: Vec<OutboundAttachmentRow> = sqlx::query_as(
-        "SELECT attachment_refs.position,
-                attachment_refs.filename,
-                attachment_refs.content_type,
-                attachment_refs.size_bytes,
-                outbound_attachment_payloads.content_base64
-         FROM attachment_refs
-         JOIN outbound_attachment_payloads
-           ON outbound_attachment_payloads.attachment_id = attachment_refs.id
-         WHERE attachment_refs.message_id = $1
-         ORDER BY attachment_refs.position ASC, attachment_refs.id ASC",
-    )
-    .bind(message_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|err| AppError::Database(err.to_string()))?;
-    rows.into_iter().map(TryInto::try_into).collect()
-}
-
-async fn fetch_outbound_mime_attachments_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    message_id: Uuid,
-) -> AppResult<Vec<OutboundMimeAttachment>> {
-    fetch_outbound_attachments_tx(tx, message_id)
-        .await?
-        .into_iter()
-        .map(|attachment| attachment.into_mime_attachment())
-        .collect()
-}
-
-async fn fetch_outbound_attachments_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    message_id: Uuid,
-) -> AppResult<Vec<OutboundAttachment>> {
-    let rows: Vec<OutboundAttachmentRow> = sqlx::query_as(
-        "SELECT attachment_refs.position,
-                attachment_refs.filename,
-                attachment_refs.content_type,
-                attachment_refs.size_bytes,
-                outbound_attachment_payloads.content_base64
-         FROM attachment_refs
-         JOIN outbound_attachment_payloads
-           ON outbound_attachment_payloads.attachment_id = attachment_refs.id
-         WHERE attachment_refs.message_id = $1
-         ORDER BY attachment_refs.position ASC, attachment_refs.id ASC",
     )
     .bind(message_id)
     .fetch_all(&mut **tx)
@@ -2245,15 +2173,6 @@ struct OutboundRecipientRow {
     position: i32,
 }
 
-#[derive(Debug, sqlx::FromRow)]
-struct OutboundAttachmentRow {
-    position: i32,
-    filename: String,
-    content_type: String,
-    size_bytes: Option<i64>,
-    content_base64: String,
-}
-
 impl TryFrom<OutboundRecipientRow> for OutboundRecipient {
     type Error = AppError;
 
@@ -2266,21 +2185,6 @@ impl TryFrom<OutboundRecipientRow> for OutboundRecipient {
             address_normalized: row.address_normalized,
             display_name: row.display_name,
             position: row.position,
-        })
-    }
-}
-
-impl TryFrom<OutboundAttachmentRow> for OutboundAttachment {
-    type Error = AppError;
-
-    fn try_from(row: OutboundAttachmentRow) -> Result<Self, Self::Error> {
-        Ok(Self {
-            position: row.position,
-            display_filename: crate::mailbox::sanitize_attachment_filename(&row.filename),
-            filename: row.filename,
-            content_type: row.content_type,
-            size_bytes: row.size_bytes.unwrap_or_default(),
-            content_base64: row.content_base64,
         })
     }
 }
@@ -2362,12 +2266,17 @@ pub fn validate_outbound_attachments(
             .map_err(|_| {
                 AppError::Validation("attachment content is not valid base64".to_string())
             })?;
-        if bytes.is_empty() {
+        let size = attachment
+            .storage
+            .as_ref()
+            .map(|object| usize::try_from(object.size_bytes).unwrap_or(usize::MAX))
+            .unwrap_or(bytes.len());
+        if size == 0 {
             return Err(AppError::Validation(
                 "attachment content is required".to_string(),
             ));
         }
-        total_size = total_size.saturating_add(bytes.len());
+        total_size = total_size.saturating_add(size);
         if total_size > MAX_OUTBOUND_ATTACHMENT_BYTES {
             return Err(AppError::Validation(format!(
                 "attachments cannot exceed {MAX_OUTBOUND_ATTACHMENT_BYTES} bytes"
@@ -2378,8 +2287,9 @@ pub fn validate_outbound_attachments(
             display_filename: crate::mailbox::sanitize_attachment_filename(&filename),
             filename,
             content_type,
-            size_bytes: bytes.len() as i64,
+            size_bytes: size as i64,
             content_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+            storage: attachment.storage.clone(),
         });
     }
     Ok(validated)
@@ -2743,6 +2653,7 @@ mod outbound_types_tests {
                 filename: "../invoice.pdf".to_string(),
                 content_type: "Application/PDF".to_string(),
                 content_base64: "ZGF0YQ==".to_string(),
+                storage: None,
             }],
         };
 

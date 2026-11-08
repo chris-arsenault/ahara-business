@@ -8,6 +8,8 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::error::{AppError, AppResult};
 
+mod thread;
+
 pub const DEFAULT_MAILBOX_LIMIT: u32 = 50;
 pub const MAX_MAILBOX_LIMIT: u32 = 100;
 pub const DEFAULT_SNIPPET_CHARS: usize = 180;
@@ -34,6 +36,10 @@ pub struct MailboxMessageSummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MailboxMessageDetail {
     pub id: String,
+    pub direction: String,
+    pub status: String,
+    pub sent_at: Option<String>,
+    pub created_at: Option<String>,
     pub thread_id: Option<String>,
     pub rfc_message_id: Option<String>,
     pub in_reply_to: Option<String>,
@@ -313,69 +319,7 @@ impl MailboxService for PgMailboxService {
     }
 
     async fn get_thread(&self, thread_id: &str) -> AppResult<MailboxThreadDetail> {
-        let thread_id = parse_uuid(thread_id, "thread id")?;
-        let row: Option<ThreadRow> = sqlx::query_as(
-            "SELECT id,
-                    normalized_subject,
-                    last_activity_at::text AS last_activity_at
-             FROM threads
-             WHERE id = $1",
-        )
-        .bind(thread_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|err| AppError::Database(err.to_string()))?;
-        let row = row.ok_or_else(|| AppError::NotFound(format!("thread {thread_id}")))?;
-
-        let detail_rows: Vec<MessageDetailRow> = sqlx::query_as(
-            "SELECT id,
-                    thread_id,
-                    rfc_message_id,
-                    in_reply_to,
-                    reference_ids,
-                    from_address,
-                    from_display_name,
-                    subject,
-                    message_date::text AS message_date,
-                    received_at::text AS received_at,
-                    body_text,
-                    is_read,
-                    contact_id,
-                    spf_result,
-                    dkim_result,
-                    dmarc_result,
-                    auth_verdict,
-                    spam_result,
-                    virus_result,
-                    security_disposition,
-                    security_reason
-             FROM messages
-             WHERE thread_id = $1
-               AND direction = 'inbound'
-               AND security_disposition = 'accepted'
-               AND status = 'received'
-             ORDER BY received_at ASC NULLS LAST, created_at ASC, id ASC",
-        )
-        .bind(thread_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|err| AppError::Database(err.to_string()))?;
-
-        let mut messages = Vec::with_capacity(detail_rows.len());
-        for detail_row in detail_rows {
-            messages.push(self.detail_from_row(detail_row).await?);
-        }
-        if messages.is_empty() {
-            return Err(AppError::NotFound(format!("thread {thread_id}")));
-        }
-
-        Ok(MailboxThreadDetail {
-            thread_id: row.id.to_string(),
-            normalized_subject: row.normalized_subject,
-            message_count: messages.len() as i32,
-            last_activity_at: row.last_activity_at,
-            messages,
-        })
+        self.fetch_thread(thread_id).await
     }
 
     async fn search_messages(
@@ -523,6 +467,8 @@ impl PgMailboxService {
     ) -> AppResult<Option<MailboxMessageDetail>> {
         let row: Option<MessageDetailRow> = sqlx::query_as(
             "SELECT id,
+                    direction, status,
+                    sent_at::text AS sent_at, created_at::text AS created_at,
                     thread_id,
                     rfc_message_id,
                     in_reply_to,
@@ -642,6 +588,10 @@ impl TryFrom<MessageSummaryRow> for MailboxMessageSummary {
 #[derive(Debug, sqlx::FromRow)]
 struct MessageDetailRow {
     id: Uuid,
+    direction: String,
+    status: String,
+    sent_at: Option<String>,
+    created_at: Option<String>,
     thread_id: Option<Uuid>,
     rfc_message_id: Option<String>,
     in_reply_to: Option<String>,
@@ -672,6 +622,10 @@ impl MessageDetailRow {
     ) -> AppResult<MailboxMessageDetail> {
         Ok(MailboxMessageDetail {
             id: self.id.to_string(),
+            direction: self.direction,
+            status: self.status,
+            sent_at: self.sent_at,
+            created_at: self.created_at,
             thread_id: self.thread_id.map(|id| id.to_string()),
             rfc_message_id: self.rfc_message_id,
             in_reply_to: self.in_reply_to,
@@ -870,14 +824,18 @@ impl MailboxService for InMemoryMailboxService {
             .lock()
             .unwrap()
             .values()
-            .filter(|message| message.is_normal_mailbox_message())
+            .filter(|message| {
+                message.is_normal_mailbox_message()
+                    || (message.direction == "outbound"
+                        && message.detail.security_disposition
+                            == MailboxSecurityDisposition::Accepted)
+            })
             .filter(|message| message.detail.thread_id.as_deref() == Some(thread_id))
             .cloned()
             .collect::<Vec<_>>();
         messages.sort_by(|left, right| {
-            left.detail
-                .received_at
-                .cmp(&right.detail.received_at)
+            thread::message_timestamp(&left.detail)
+                .cmp(&thread::message_timestamp(&right.detail))
                 .then_with(|| left.detail.id.cmp(&right.detail.id))
         });
 
@@ -890,7 +848,7 @@ impl MailboxService for InMemoryMailboxService {
             message_count: messages.len() as i32,
             last_activity_at: messages
                 .iter()
-                .filter_map(|message| message.last_activity_at.clone())
+                .filter_map(|message| thread::message_timestamp(&message.detail).cloned())
                 .max(),
             messages: messages.into_iter().map(|message| message.detail).collect(),
         })
@@ -1206,6 +1164,10 @@ mod mailbox_service_tests {
     ) -> MailboxMessageDetail {
         MailboxMessageDetail {
             id: id.to_string(),
+            direction: "inbound".to_string(),
+            status: "received".to_string(),
+            sent_at: None,
+            created_at: None,
             thread_id: Some(THREAD_ID.to_string()),
             rfc_message_id: Some(format!("<{id}@example.test>")),
             in_reply_to: None,

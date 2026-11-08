@@ -20,10 +20,11 @@ pub async fn handle_event(
     config: &AppConfig,
 ) -> AppResult<Value> {
     let pool = connect_pool(config).await?;
-    let outbound = Arc::new(PgOutboundService::new(
-        pool.clone(),
-        config.mail.domain.clone(),
-    ));
+    let outbound = Arc::new(
+        PgOutboundService::new(pool.clone(), config.mail.domain.clone()).with_attachment_storage(
+            Arc::new(shared::attachment_storage::S3AttachmentStorage::from_env(&config.mail).await),
+        ),
+    );
     let mail_sender = Arc::new(SesMailSender::from_env().await);
     let worker = OutboundSendWorker::new(outbound, mail_sender, request_id);
     let raw_mail_store = Arc::new(S3RawMailStore::from_env(&config.mail).await);

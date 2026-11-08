@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
-use aws_sdk_ses::Client;
-use aws_sdk_ses::primitives::Blob;
-use aws_sdk_ses::types::RawMessage;
+use aws_sdk_sesv2::Client;
+use aws_sdk_sesv2::primitives::Blob;
+use aws_sdk_sesv2::types::{Destination, EmailContent, RawMessage};
 
 use crate::error::{AppError, AppResult};
 use crate::ports::{MailSender, OutboundMailRequest, OutboundMailResponse};
@@ -34,13 +34,22 @@ impl SesMailSender {
 impl MailSender for SesMailSender {
     async fn send_mail(&self, request: OutboundMailRequest) -> AppResult<OutboundMailResponse> {
         request.validate_for_send()?;
+        if request.raw_message.len() > 40 * 1024 * 1024 {
+            return Err(AppError::Validation(
+                "encoded message exceeds the SES 40 MB limit".into(),
+            ));
+        }
         let raw_message = Self::raw_message(request.raw_message)?;
         let output = self
             .client
-            .send_raw_email()
-            .source(request.from_address)
-            .set_destinations(Some(request.to_addresses))
-            .raw_message(raw_message)
+            .send_email()
+            .from_email_address(request.from_address)
+            .destination(
+                Destination::builder()
+                    .set_to_addresses(Some(request.to_addresses))
+                    .build(),
+            )
+            .content(EmailContent::builder().raw(raw_message).build())
             .send()
             .await
             .map_err(|err| AppError::ExternalService {
@@ -49,7 +58,10 @@ impl MailSender for SesMailSender {
             })?;
 
         Ok(OutboundMailResponse {
-            provider_message_id: output.message_id().to_string(),
+            provider_message_id: output
+                .message_id()
+                .ok_or_else(|| AppError::Internal("SES returned no message id".into()))?
+                .to_string(),
         })
     }
 }
@@ -57,20 +69,20 @@ impl MailSender for SesMailSender {
 #[cfg(test)]
 mod tests {
     use aws_config::Region;
-    use aws_sdk_ses::config::{BehaviorVersion, Credentials};
+    use aws_sdk_sesv2::config::{BehaviorVersion, Credentials};
 
     use crate::error::AppError;
     use crate::ports::{MailSender, OutboundMailRequest};
 
     use super::SesMailSender;
 
-    fn client() -> aws_sdk_ses::Client {
-        let config = aws_sdk_ses::Config::builder()
+    fn client() -> aws_sdk_sesv2::Client {
+        let config = aws_sdk_sesv2::Config::builder()
             .region(Region::new("us-east-1"))
             .behavior_version(BehaviorVersion::latest())
             .credentials_provider(Credentials::new("test", "test", None, None, "unit-test"))
             .build();
-        aws_sdk_ses::Client::from_conf(config)
+        aws_sdk_sesv2::Client::from_conf(config)
     }
 
     #[test]

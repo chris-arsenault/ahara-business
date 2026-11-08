@@ -53,10 +53,14 @@ Inbound flow:
 
 Outbound flow:
 
-1. Authenticated compose, reply, or forwarding actions create outbound message
-   and work rows.
+1. Authenticated upload grants authorize files in private S3. The browser sends
+   raw file bytes directly to S3, bypassing the application ALB/WAF. Compose and
+   reply carry opaque upload IDs, never inline file content. The API verifies the
+   upload owner, size, SHA-256 and content type, then pins a private stored version
+   before creating outbound message and work rows. Forwarding creates work rows
+   from the accepted source message.
 2. The scheduled send worker claims queued work, checks suppressions and rate
-   limits, constructs text/plain MIME, and sends through SES.
+   limits, constructs text/plain or multipart MIME, and sends through SES v2.
 3. SES bounce and complaint SNS notifications update outbound status and
    suppressions through the feedback handler.
 
@@ -78,7 +82,8 @@ Outbound flow:
   - spam failures, gray verdicts, processing failures, and missing scan values
     are quarantined;
   - virus failures are rejected with minimal audit metadata.
-- Normal mailbox queries return accepted messages only.
+- Inbox and search queries return accepted inbound messages only. Conversation
+  reads also include outbound replies and their delivery status in time order.
 - Forwarding processes accepted messages only when SPF, DKIM, and DMARC pass.
 - MIME parsing extracts sender, recipients, subject, date, message identifiers,
   threading keys, matched route, body text, and attachment metadata.
@@ -104,6 +109,9 @@ The database schema stores:
   and raw S3 pointer.
 - `recipients` as normalized rows for `to`, `cc`, and `bcc`.
 - `attachment_refs` as metadata pointers without app-owned attachment bytes.
+- `attachment_uploads` for owner-bound upload metadata and finalized S3 versions;
+  new outbound payload records hold S3 references. Existing database payloads
+  remain readable for older mail.
 - `forwarding_rules` as active address-scoped forwarding configuration.
 - `suppressions` for bounce, complaint, and manual suppression.
 - `outbound_work` as the dedicated queue and retry ledger.
@@ -148,6 +156,16 @@ parameterized SQL through `sqlx`.
 - Omit message bodies, full headers, and raw email addresses from logs and
   operational metrics.
 - Sanitize untrusted attachment filenames on display or download.
+- Grant S3 transfers only after mailbox authentication. Upload links expire after
+  15 minutes; unsubmitted upload references expire after one day. Stage objects
+  expire after two days. Queued mail references a separate version-pinned object
+  retained for sender retries and sent-mail downloads. Downloads return a
+  short-lived S3 link with attachment disposition and an inert binary type;
+  attachment bytes never traverse the application API/WAF.
+- Allow at most ten outbound attachments and 15 MB (15 MiB; 15,728,640 bytes)
+  combined. Show upload state and individual removal; block sending while an
+  attachment is uploading or failed. SES v2's 40 MB encoded-message ceiling
+  accommodates that budget after MIME/base64 encoding.
 - Route sensitive external account recovery mail through domains with a mature
   operational posture.
 

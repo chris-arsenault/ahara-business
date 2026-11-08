@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+mod mailbox_fixtures;
+
 use shared::app_authorizations::{AppAuthorizationUser, InMemoryAppAuthorizationService};
 use shared::attachments::{InMemoryAttachmentService, MailboxAttachmentDownload};
 use shared::auth::{AuthVerifier, UserContext};
@@ -213,6 +215,8 @@ fn receivable(id: impl Into<String>, title: &str, amount_cents: i64) -> FinanceR
     }
 }
 
+mod attachment_storage;
+
 impl ApiState {
     pub fn for_tests() -> Self {
         let config = AppConfig {
@@ -288,39 +292,7 @@ impl ApiState {
                     .collect(),
             },
         ]));
-        let accepted_message = MailboxMessageDetail {
-            id: "00000000-0000-0000-0000-000000000001".to_string(),
-            thread_id: Some("00000000-0000-0000-0000-000000000101".to_string()),
-            rfc_message_id: Some("<accepted@example.test>".to_string()),
-            in_reply_to: None,
-            reference_ids: vec![],
-            from_address: "sender@example.test".to_string(),
-            from_display_name: "Sender Display".to_string(),
-            subject: "Invoice".to_string(),
-            message_date: Some("2026-01-01 00:00:00+00".to_string()),
-            received_at: Some("2026-01-01 00:00:00+00".to_string()),
-            body_text: "Plaintext invoice body with auth verdict details.".to_string(),
-            recipients: vec![],
-            attachments: vec![MailboxAttachment {
-                id: "00000000-0000-0000-0000-000000000301".to_string(),
-                position: 0,
-                filename: "../invoice.pdf".to_string(),
-                display_filename: "invoice.pdf".to_string(),
-                content_type: "application/pdf".to_string(),
-                size_bytes: Some(12),
-                content_id: None,
-            }],
-            is_read: false,
-            contact_id: None,
-            spf_result: Some(MailboxAuthResult::Pass),
-            dkim_result: Some(MailboxAuthResult::Pass),
-            dmarc_result: Some(MailboxAuthResult::Pass),
-            auth_verdict: Some(MailboxAuthResult::Pass),
-            spam_result: Some(MailboxScanResult::Pass),
-            virus_result: Some(MailboxScanResult::Pass),
-            security_disposition: MailboxSecurityDisposition::Accepted,
-            security_reason: Some("clean".to_string()),
-        };
+        let accepted_message = mailbox_fixtures::accepted_message();
         let quarantined_message = MailboxMessageDetail {
             id: "00000000-0000-0000-0000-000000000002".to_string(),
             thread_id: Some("00000000-0000-0000-0000-000000000101".to_string()),
@@ -351,8 +323,26 @@ impl ApiState {
             from_address: accepted_message.from_address.clone(),
             subject: accepted_message.subject.clone(),
         });
+        let outbound_reply = MailboxMessageDetail {
+            id: "00000000-0000-0000-0000-000000000004".to_string(),
+            direction: "outbound".to_string(),
+            status: "sent".to_string(),
+            received_at: None,
+            sent_at: Some("2026-01-01 00:03:00+00".to_string()),
+            from_address: "contact@ahara.io".to_string(),
+            body_text: "My sent reply".to_string(),
+            attachments: vec![],
+            ..accepted_message.clone()
+        };
         let mailbox = Arc::new(InMemoryMailboxService::with_messages([
             InMemoryMailboxMessage::accepted(accepted_message),
+            InMemoryMailboxMessage {
+                direction: "outbound".to_string(),
+                status: "sent".to_string(),
+                normalized_subject: "invoice".to_string(),
+                last_activity_at: outbound_reply.sent_at.clone(),
+                detail: outbound_reply,
+            },
             InMemoryMailboxMessage {
                 direction: "inbound".to_string(),
                 status: "quarantined".to_string(),
@@ -388,6 +378,8 @@ impl ApiState {
             contacts,
             mailbox,
             attachments,
+            attachment_storage: Arc::new(attachment_storage::TestAttachmentStorage::default()),
+            attachment_uploads: Arc::new(attachment_storage::TestAttachmentStorage::default()),
             raw_mail_store: Arc::new(TestRawMailStore),
             outbound,
             forwarding,

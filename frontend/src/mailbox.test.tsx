@@ -1,129 +1,43 @@
 /* eslint-disable max-lines-per-function */
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  grantTestUpload,
+  installUploadTransport,
+} from "./mailUploads.testSupport";
 import userEvent from "@testing-library/user-event";
 import { MailboxList, MailboxView, type MailboxApi } from "./mailbox";
-import type {
-  MailboxMessageDetail,
-  MailboxMessageSummary,
-  OutboundMessageDetail,
-  OutboundMessageSummary,
-} from "./types";
+import type { MailboxMessageSummary } from "./types";
 
-const unreadMessage: MailboxMessageSummary = {
-  id: "message-1",
-  thread_id: "thread-1",
-  from_address: "sender@example.test",
-  from_display_name: "Sender Display",
-  subject: "Invoice",
-  snippet: "Plaintext invoice body",
-  received_at: "2026-01-01 00:00:00+00",
-  is_read: false,
-  has_attachments: true,
-  attachment_count: 2,
-  contact_id: null,
-  auth_verdict: "pass",
-  spam_result: "pass",
-  virus_result: "pass",
-  security_disposition: "accepted",
-};
+import {
+  unreadMessage,
+  readMessage,
+  messageDetail,
+  sentMessage,
+  sentMessageDetail,
+} from "./mailbox.testSupport";
 
-const readMessage: MailboxMessageSummary = {
-  ...unreadMessage,
-  is_read: true,
-};
-
-const messageDetail: MailboxMessageDetail = {
-  id: "message-1",
-  thread_id: "thread-1",
-  rfc_message_id: "<message-1@example.test>",
-  in_reply_to: null,
-  reference_ids: [],
-  from_address: "sender@example.test",
-  from_display_name: "Sender Display",
-  subject: "Invoice",
-  message_date: "2026-01-01 00:00:00+00",
-  received_at: "2026-01-01 00:00:00+00",
-  body_text:
-    "<script>alert(1)</script>\nVisit javascript:alert(1)\nOpen data:text/html;base64,abc",
-  recipients: [],
-  attachments: [
-    {
-      id: "attachment-1",
-      position: 0,
-      filename: "../secret/invoice.pdf",
-      display_filename: "../secret/invoice.pdf",
-      content_type: "application/pdf",
-      size_bytes: 2048,
-      content_id: null,
-    },
-  ],
-  is_read: false,
-  contact_id: null,
-  spf_result: "pass",
-  dkim_result: "pass",
-  dmarc_result: "pass",
-  auth_verdict: "pass",
-  spam_result: "pass",
-  virus_result: "pass",
-  security_disposition: "accepted",
-  security_reason: "clean",
-};
-
-const sentMessage: OutboundMessageSummary = {
-  id: "outbound-1",
-  thread_id: "thread-1",
-  status: "queued",
-  from_address: "contact@ahara.io",
-  subject: "Plain note",
-  snippet: "Queued body",
-  primary_recipient: "person@example.com",
-  recipient_count: 1,
-  last_error: null,
-  sent_at: null,
-  created_at: "2026-01-01 00:00:00+00",
-};
-
-const sentMessageDetail: OutboundMessageDetail = {
-  id: "outbound-1",
-  source_message_id: null,
-  thread_id: "thread-1",
-  rfc_message_id: "<outbound-1@ahara.io>",
-  in_reply_to: null,
-  reference_ids: [],
-  status: "queued",
-  from_address: "contact@ahara.io",
-  from_address_normalized: "contact@ahara.io",
-  subject: "Plain note",
-  body_text: "Queued body\n<script>alert(1)</script>",
-  recipients: [
-    {
-      kind: "to",
-      address: "person@example.com",
-      address_normalized: "person@example.com",
-      display_name: "",
-      position: 0,
-    },
-  ],
-  attachments: [],
-  last_error: null,
-  sent_at: null,
-  created_at: "2026-01-01 00:00:00+00",
-};
-
-afterEach(() => cleanup());
+beforeEach(installUploadTransport);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 function renderMailboxList(messages: MailboxMessageSummary[]) {
   return render(<MailboxList messages={messages} />);
 }
 
 function renderMailboxView(apiClient: MailboxApi) {
-  return render(<MailboxView apiClient={apiClient} />);
+  return render(
+    <MailboxView
+      apiClient={{ createAttachmentUpload: grantTestUpload, ...apiClient }}
+    />,
+  );
 }
 
 describe("MailboxList", () => {
-  it("renders mailbox rows with unread state and auth verdict", () => {
+  it("renders compact mailbox rows with unread state, dates, and attachments", () => {
     renderMailboxList([unreadMessage]);
 
     expect(screen.getAllByText("sender@example.test").length).toBeGreaterThan(
@@ -133,7 +47,8 @@ describe("MailboxList", () => {
     expect(screen.getByText("Invoice")).toBeInTheDocument();
     expect(screen.getByText("Plaintext invoice body")).toBeInTheDocument();
     expect(screen.getByLabelText("Unread message")).toBeInTheDocument();
-    expect(screen.getByText("pass")).toBeInTheDocument();
+    expect(screen.queryByText("pass")).not.toBeInTheDocument();
+    expect(screen.getByText("Jan 1")).toBeInTheDocument();
     expect(screen.getByLabelText("Attachment count")).toHaveTextContent("2");
   });
 
@@ -182,7 +97,8 @@ describe("MailboxView", () => {
       0,
     );
     expect(screen.getAllByText("Sender Display").length).toBeGreaterThan(0);
-    expect(screen.getByText("Auth verdict")).toBeInTheDocument();
+    await user.click(screen.getByText(/Authenticated · Scans passed/));
+    expect(screen.getByText("Auth verdict")).toBeVisible();
     expect(screen.getAllByText("pass").length).toBeGreaterThan(0);
     expect(
       screen.getByText(/<script>alert\(1\)<\/script>/),
@@ -289,9 +205,7 @@ describe("MailboxView", () => {
           subject: string;
           body_text: string;
           attachments: Array<{
-            filename: string;
-            content_type: string;
-            content_base64: string;
+            upload_id: string;
           }>;
         }
       | undefined;
@@ -319,6 +233,9 @@ describe("MailboxView", () => {
       screen.getByLabelText("Attachments"),
       new File(["hi"], "invoice.pdf", { type: "application/pdf" }),
     );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Send" })).toBeEnabled(),
+    );
     await user.click(screen.getByRole("button", { name: "Send" }));
 
     expect(composed).toEqual({
@@ -330,13 +247,11 @@ describe("MailboxView", () => {
       bcc: [],
       attachments: [
         {
-          filename: "invoice.pdf",
-          content_type: "application/pdf",
-          content_base64: "aGk=",
+          upload_id: "upload-1",
         },
       ],
     });
-    expect(await screen.findByText("Queued")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { hidden: true })).not.toBeVisible();
   });
 
   it("shows sent mail and opens outbound message details", async () => {
@@ -359,9 +274,7 @@ describe("MailboxView", () => {
     await user.click(screen.getByRole("button", { name: /Queued body/i }));
 
     expect(fetchedOutboundId).toBe("outbound-1");
-    expect(
-      await screen.findByLabelText("Sent message detail"),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText("Thread detail")).toBeInTheDocument();
     expect(screen.getAllByText("contact@ahara.io").length).toBeGreaterThan(0);
     expect(
       screen.getByText(/<script>alert\(1\)<\/script>/),
@@ -376,9 +289,7 @@ describe("MailboxView", () => {
           from_address: string;
           body_text: string;
           attachments: Array<{
-            filename: string;
-            content_type: string;
-            content_base64: string;
+            upload_id: string;
           }>;
         }
       | undefined;
@@ -412,10 +323,16 @@ describe("MailboxView", () => {
       await screen.findByRole("button", { name: /sender@example.test/i }),
     );
     await user.click(await screen.findByRole("button", { name: "Reply" }));
-    await user.type(screen.getByLabelText("Reply"), "reply <i>body</i>");
+    await user.type(
+      screen.getByRole("textbox", { name: "Reply" }),
+      "reply <i>body</i>",
+    );
     await user.upload(
       screen.getByLabelText("Reply attachments"),
       new File(["ok"], "reply.txt", { type: "text/plain" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Send reply" })).toBeEnabled(),
     );
     await user.click(screen.getByRole("button", { name: "Send reply" }));
 
@@ -425,9 +342,7 @@ describe("MailboxView", () => {
       body_text: "reply <i>body</i>",
       attachments: [
         {
-          filename: "reply.txt",
-          content_type: "text/plain",
-          content_base64: "b2s=",
+          upload_id: "upload-1",
         },
       ],
     });
