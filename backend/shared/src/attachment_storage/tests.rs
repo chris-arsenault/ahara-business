@@ -10,7 +10,11 @@ fn storage(endpoint: Option<String>) -> S3AttachmentStorage {
         .behavior_version(aws_config::BehaviorVersion::latest())
         .region(aws_sdk_s3::config::Region::new("us-east-1"))
         .credentials_provider(aws_sdk_s3::config::Credentials::new(
-            "test", "test", None, None, "test",
+            "test",
+            "test",
+            Some("test-session-token".into()),
+            None,
+            "test",
         ))
         .force_path_style(true);
     if let Some(endpoint) = endpoint {
@@ -79,6 +83,19 @@ async fn signed_upload_constrains_length_checksum_and_expires() {
             .to_ascii_lowercase()
             .contains("x-amz-checksum-sha256")
     );
+    let allowed = [
+        "content-type",
+        "x-amz-checksum-sha256",
+        "x-amz-sdk-checksum-algorithm",
+        "x-amz-content-sha256",
+        "x-amzn-trace-id",
+    ];
+    for name in grant.headers.keys() {
+        assert!(
+            allowed.contains(&name.as_str()),
+            "browser upload requires unexpected header {name}"
+        );
+    }
     assert!(
         !grant
             .headers

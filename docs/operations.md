@@ -28,7 +28,9 @@ Use the controlled [smoke check](smoke-check.md) after deployment.
   MIME prefix.
 - `PrivateAttachmentObjects` allows GET/versioned GET/PUT only under the private
   `attachments/` prefix. Browser grants expire after 15 minutes; CORS permits the
-  mail frontend origin. Stage objects expire after two days and extracted
+  mail frontend origin and accepts the `x-amzn-trace-id` header included by the
+  AWS SDK's Lambda recursion detection when presigning. Stage objects expire
+  after two days and extracted
   download objects after one day. Version-pinned `attachments/files/` objects
   remain available to queued retries and sent-mail downloads.
 - `SendFromMailIdentity` allows outbound send only from the project SES domain

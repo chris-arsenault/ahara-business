@@ -4,6 +4,8 @@ All notable user-visible changes are recorded here.
 
 ## Unreleased
 
+- Fix direct attachment uploads rejected by S3 CORS when Lambda's SDK includes
+  `x-amzn-trace-id` in the upload headers.
 - Overhaul mailbox navigation, conversation lists, the reading pane, compose and
   inline replies; use space efficiently on desktop and phones, with expandable
   security details.

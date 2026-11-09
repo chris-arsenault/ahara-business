@@ -103,7 +103,7 @@ resource "aws_s3_bucket_cors_configuration" "mail_attachments" {
   cors_rule {
     allowed_origins = ["https://${local.frontend_hostname}"]
     allowed_methods = ["PUT", "GET", "HEAD"]
-    allowed_headers = ["content-type", "x-amz-checksum-sha256", "x-amz-sdk-checksum-algorithm", "x-amz-content-sha256"]
+    allowed_headers = ["content-type", "x-amz-checksum-sha256", "x-amz-sdk-checksum-algorithm", "x-amz-content-sha256", "x-amzn-trace-id"]
     expose_headers  = ["ETag"]
     max_age_seconds = 300
   }
